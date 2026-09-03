@@ -103,7 +103,7 @@
       coyote:0, buffer:0, jumpHeld:false,
       jumps:0,              // air jumps used since last grounded
       dashT:0, dashCd:0, dashDir:0,
-      bombs:[], blasts:[],
+      bombs:[], blasts:[], tier:1, tierMsg:0,
       obs:[], plats:[], nextGap:60, nextPlat:340, clouds:[], parts:[],
       surf:GROUND,          // surface currently standing on / falling toward
       state:'ready',        // ready | run | dead
@@ -203,16 +203,36 @@
 
   // Platforms sit at heights a full jump comfortably clears (peak is ~102px).
   // Anything above ~85px is only reachable in a razor-thin timing window, so cap well under.
-  const PLAT_H = [42, 56, 72];
+  // Storeys are spaced so a single jump (peak ~102px) climbs two of them and a
+  // double jump reaches ~4 — high enough to feel like climbing, low enough that
+  // every tier stays reachable from the one below.
+  const STOREY   = 48;
+  const MILESTONE = 250;   // one new storey unlocked per this many points
+
+  // How many storeys are in play right now: grows with score, but never taller
+  // than the viewport can actually show above the floor.
+  function tiers() {
+    const earned = 1 + Math.floor(S.score / MILESTONE);
+    const fits   = Math.max(1, Math.floor((GROUND - 90) / STOREY));
+    return Math.min(earned, fits);
+  }
+
   function spawnPlat() {
-    const h = PLAT_H[(Math.random()*PLAT_H.length)|0];
+    const n = tiers();
+    // Weight toward the lower storeys so the ground route stays viable; higher
+    // tiers show up more often the more of them you've unlocked.
+    const lvl = 1 + Math.floor(Math.pow(Math.random(), 1.7) * n);
+    const h = lvl * STOREY;
     const w = 90 + Math.random()*130;
-    S.plats.push({ x:W+20, y:GROUND-h, w, h });
+    S.plats.push({ x:W+20, y:GROUND-h, w, h, lvl });
     // Sometimes perch a cactus on top — a reason to leave the platform again.
     if (Math.random() < 0.3 && w > 130) {
       S.obs.push({kind:'cactus', x:W+20+w*0.55, y:GROUND-h-30, w:15, h:30, n:1, cw:15});
     }
-    S.nextPlat = S.spd*0.75 + Math.random()*S.spd*0.7;
+    // More storeys in play means platforms should come a little thicker, so
+    // there's something to jump *to* up there.
+    const density = 1 - Math.min(0.4, (n-1) * 0.06);
+    S.nextPlat = (S.spd*0.75 + Math.random()*S.spd*0.7) * density;
   }
 
   // Bombers cruise above the skyline and drop bombs on a fuse. They only show
@@ -293,6 +313,11 @@
     else S.onGround = false;
     // Walked off a ledge: start falling from where we stood (coyote time still applies).
     if (!S.onGround && S.vy === 0) S.vy = 1;
+
+    // New storey unlocked?
+    const nt = tiers();
+    if (nt > S.tier) { S.tier = nt; S.tierMsg = 1.6; }
+    S.tierMsg = Math.max(0, S.tierMsg - dt);
 
     S.nextGap  -= eff*dt;
     S.nextPlat -= eff*dt;
@@ -430,8 +455,16 @@
     for (const pl of S.plats) {
       px(pl.x, pl.y, pl.w, 3, '#3d3d4c');                    // top surface
       px(pl.x, pl.y+3, pl.w, 2, '#23232e');
-      // sparse supports so it reads as a ledge, not a floating bar
-      for (let x = pl.x+6; x < pl.x+pl.w-6; x += 26) px(x, pl.y+5, 2, pl.h-5, '#1b1b25');
+      // Short stubs, not full-height columns — at ten storeys, legs all the way
+      // down to the floor would draw a solid wall and hide the play area.
+      const leg = Math.min(pl.h - 5, 14);
+      for (let x = pl.x+6; x < pl.x+pl.w-6; x += 26) px(x, pl.y+5, 2, leg, '#1b1b25');
+      // Higher storeys sit dimmer, giving the stack a sense of depth.
+      if (pl.lvl > 1) {
+        ctx.globalAlpha = Math.max(0.25, 1 - pl.lvl*0.06);
+        px(pl.x, pl.y, pl.w, 3, '#4a4a5e');
+        ctx.globalAlpha = 1;
+      }
     }
     for (const b of S.bombs) {
       px(b.x-4, b.y-5, 8, 10, '#e8e8ef');
@@ -449,21 +482,37 @@
 
     if (S.state !== 'dead') drawRunner();
 
+    // Dash cooldown, pinned just above the runner's head so it's read without
+    // looking away from the action.
+    if (S.state === 'run') {
+      const bw = 30, bx = 40 + (24-bw)/2;
+      const by = S.y - (S.ducking ? 22 : 40) - 12;
+      const f  = Math.max(0, Math.min(1, 1 - (S.dashCd / DASH_CD)));
+      px(bx, by, bw, 3, '#23232e');
+      px(bx, by, bw*f, 3, f >= 1 ? '#7cf03d' : '#5a5a70');
+      if (f >= 1) px(bx-3, by, 2, 3, '#7cf03d');   // little "ready" tick
+    }
+
     ctx.fillStyle = '#6a6a7a';
     ctx.font = '600 15px ui-monospace,Menlo,monospace';
     ctx.textAlign = 'right';
     ctx.fillText(String(S.score).padStart(5,'0'), W-20, 34);
     if (S.best > 0) { ctx.fillStyle='#3d3d4c'; ctx.fillText('HI '+String(S.best).padStart(5,'0'), W-110, 34); }
-
-    // dash meter — fills back up over the cooldown
     if (S.state === 'run') {
-      const bw = 54, bx = W-20-bw, by = 44;
-      px(bx, by, bw, 4, '#23232e');
-      const f = 1 - (S.dashCd / DASH_CD);
-      px(bx, by, bw*Math.max(0,Math.min(1,f)), 4, f >= 1 ? '#7cf03d' : '#3d3d4c');
+      ctx.fillStyle = '#3d3d4c'; ctx.font = '600 11px ui-monospace,Menlo,monospace';
+      ctx.fillText('STOREYS ' + S.tier, W-20, 52);
     }
 
+
+
     ctx.textAlign = 'center';
+    if (S.tierMsg > 0 && S.state === 'run') {
+      ctx.globalAlpha = Math.min(1, S.tierMsg / 0.4);
+      ctx.fillStyle = '#7cf03d';
+      ctx.font = '600 15px ui-monospace,Menlo,monospace';
+      ctx.fillText('STOREY ' + S.tier + ' UNLOCKED', W/2, 64);
+      ctx.globalAlpha = 1;
+    }
     if (S.state === 'ready') {
       ctx.fillStyle = '#e8e8ef'; ctx.font = '600 16px ui-monospace,Menlo,monospace';
       ctx.fillText('press space to run', W/2, H/2 - 6);
