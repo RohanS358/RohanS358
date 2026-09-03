@@ -14,21 +14,24 @@
   body{
     background:var(--bg); color:var(--fg);
     font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    display:flex; flex-direction:column; align-items:center; justify-content:center;
-    gap:14px; padding:16px; overflow:hidden;
+    overflow:hidden;
     -webkit-user-select:none; user-select:none; touch-action:manipulation;
   }
   h1{
+    position:fixed; top:14px; left:20px; z-index:2;
     margin:0; font-size:13px; font-weight:600; letter-spacing:.32em;
-    color:var(--dim); text-transform:uppercase;
+    color:var(--dim); text-transform:uppercase; pointer-events:none;
   }
-  #wrap{position:relative; width:100%; max-width:760px}
+  #wrap{position:fixed; inset:0}
   canvas{
-    display:block; width:100%; height:auto; aspect-ratio:760/240;
-    background:#111117; border:1px solid #23232e; border-radius:10px;
-    image-rendering:pixelated;
+    display:block; width:100%; height:100%;
+    background:#111117;
   }
-  #hint{color:var(--dim); font-size:12px; text-align:center; min-height:1.5em}
+  #hint{
+    position:fixed; left:0; right:0; bottom:14px; z-index:2;
+    color:var(--dim); font-size:12px; text-align:center;
+  }
+  #hint.top{bottom:auto; top:14px; right:20px; left:auto; text-align:right}
   kbd{
     background:#1c1c26; border:1px solid #2e2e3c; border-bottom-width:2px;
     border-radius:4px; padding:1px 5px; font:inherit; font-size:11px; color:var(--fg);
@@ -44,17 +47,34 @@
 <h1>run</h1>
 <div id="wrap"><canvas id="c" width="760" height="240"></canvas></div>
 <div id="hint">
-  <span class="desktop"><kbd>space</kbd> jump &nbsp;·&nbsp; <kbd>↓</kbd> duck &nbsp;·&nbsp; hold to jump higher</span>
-  <span class="touch">tap to jump · touch bottom half to duck</span>
+  <span class="desktop"><kbd>space</kbd> jump · <kbd>space</kbd> again to double jump · <kbd>shift</kbd> dash · <kbd>↓</kbd> duck</span>
+  <span class="touch">tap jump · tap again mid-air to double jump · swipe → to dash · hold low to duck</span>
+  &nbsp;·&nbsp; <a href="https://github.com/RohanS358">← profile</a>
 </div>
-<div id="hint"><a href="https://github.com/RohanS358">← back to profile</a></div>
 
 <script>
 (() => {
   const cv = document.getElementById('c');
   const ctx = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  const GROUND = H - 42;
+
+  // Canvas fills the viewport. W/H/GROUND are recomputed on resize, so every
+  // system below reads them live rather than capturing a size at startup.
+  let W = 0, H = 0, GROUND = 0, DPR = 1;
+  function resize() {
+    DPR = Math.min(devicePixelRatio || 1, 2);   // cap: 3x on phones costs more than it shows
+    W = Math.round(innerWidth);
+    H = Math.round(innerHeight);
+    cv.width  = Math.round(W * DPR);
+    cv.height = Math.round(H * DPR);
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    // Keep the floor a fixed distance up from the bottom, but never so low on
+    // short/landscape phones that the play area vanishes.
+    GROUND = Math.round(H - Math.max(56, Math.min(150, H * 0.22)));
+  }
+  addEventListener('resize', resize);
+  addEventListener('orientationchange', resize);
+  resize();
 
   // ---- tuning -------------------------------------------------------------
   const GRAV      = 2400;   // px/s^2
@@ -65,6 +85,10 @@
   const SPD0      = 320;    // starting scroll speed px/s
   const SPD_MAX   = 760;
   const SPD_ACC   = 11;     // px/s per second
+  const AIR_JUMP_V= -620;   // double jump: slightly weaker than the first
+  const DASH_V    = 900;    // dash speed (world units, moves obstacles past you)
+  const DASH_TIME = 0.18;   // s of dash
+  const DASH_CD   = 0.9;    // s cooldown
 
   const best = (() => {
     try { return parseInt(localStorage.getItem('run.best') || '0', 10) || 0; }
@@ -77,12 +101,18 @@
       t:0, spd:SPD0, dist:0, score:0, best,
       y:GROUND, vy:0, ducking:false, onGround:true,
       coyote:0, buffer:0, jumpHeld:false,
+      jumps:0,              // air jumps used since last grounded
+      dashT:0, dashCd:0, dashDir:0,
+      bombs:[], blasts:[],
       obs:[], plats:[], nextGap:60, nextPlat:340, clouds:[], parts:[],
       surf:GROUND,          // surface currently standing on / falling toward
       state:'ready',        // ready | run | dead
       deadT:0, shake:0,
     };
-    for (let i=0;i<5;i++) S.clouds.push({x:Math.random()*W, y:24+Math.random()*70, s:.25+Math.random()*.35});
+    const nClouds = Math.max(5, Math.round(W/170));
+    for (let i=0;i<nClouds;i++) S.clouds.push({
+      x:Math.random()*W, y:20+Math.random()*Math.max(60, GROUND*0.45), s:.25+Math.random()*.35
+    });
   }
   reset();
 
@@ -91,6 +121,22 @@
     if (S.state === 'ready') { S.state = 'run'; return; }
     if (S.state === 'dead')  { if (S.deadT > .5) { const b=S.best; reset(); S.best=b; S.state='run'; } return; }
     S.buffer = BUFFER; S.jumpHeld = true;
+    // Double jump: only once airborne with no ground/coyote left to use.
+    if (!S.onGround && S.coyote <= 0 && S.jumps < 1) {
+      S.jumps++; S.vy = AIR_JUMP_V; S.buffer = 0;
+      for (let i=0;i<8;i++) S.parts.push({
+        x:52, y:S.y-6, vx:(Math.random()-.5)*140, vy:Math.random()*120, life:.5, c:'#7cf03d'
+      });
+    }
+  };
+
+  const dash = () => {
+    if (S.state !== 'run' || S.dashCd > 0 || S.dashT > 0) return;
+    S.dashT = DASH_TIME; S.dashCd = DASH_CD;
+    for (let i=0;i<10;i++) S.parts.push({
+      x:44, y:S.y-20+Math.random()*20, vx:-200-Math.random()*200, vy:(Math.random()-.5)*60,
+      life:.45, c:'#7cf03d'
+    });
   };
   const release = () => {
     S.jumpHeld = false;
@@ -100,26 +146,46 @@
   addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); if(!e.repeat) press(); }
     if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); S.ducking = true; }
+    if (e.code === 'ShiftLeft' || e.code === 'ShiftRight' || e.code === 'KeyD') { e.preventDefault(); if(!e.repeat) dash(); }
   });
   addEventListener('keyup', e => {
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') release();
     if (e.code === 'ArrowDown' || e.code === 'KeyS') S.ducking = false;
   });
-  const touchDuck = e => {
-    const r = cv.getBoundingClientRect();
-    const ty = e.touches[0].clientY - r.top;
-    if (ty > r.height * 0.55 && S.state === 'run') { S.ducking = true; } else { press(); }
-  };
-  cv.addEventListener('touchstart', e => { e.preventDefault(); touchDuck(e); }, {passive:false});
-  cv.addEventListener('touchend',   e => { e.preventDefault(); S.ducking = false; release(); }, {passive:false});
+  let tStart = null;
+  cv.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const t = e.touches[0];
+    tStart = {x:t.clientX, y:t.clientY, t:performance.now()};
+    // Bottom fifth is the duck pad; anywhere else jumps.
+    if (t.clientY > innerHeight * 0.8 && S.state === 'run') S.ducking = true;
+    else press();
+  }, {passive:false});
+  cv.addEventListener('touchmove', e => {
+    if (!tStart) return;
+    const t = e.touches[0];
+    // A quick rightward flick is a dash.
+    if (t.clientX - tStart.x > 48 && performance.now() - tStart.t < 300) { dash(); tStart = null; }
+  }, {passive:false});
+  cv.addEventListener('touchend',   e => { e.preventDefault(); tStart=null; S.ducking = false; release(); }, {passive:false});
   cv.addEventListener('mousedown',  e => { e.preventDefault(); press(); });
   addEventListener('mouseup', release);
 
   // ---- world --------------------------------------------------------------
   function spawn() {
     // Bias toward cacti early; birds only once it's fast enough to be fair.
-    const canBird = S.spd > 420;
-    const kind = (canBird && Math.random() < 0.3) ? 'bird' : 'cactus';
+    const canBird   = S.spd > 420;
+    const canBomber = S.spd > 480;
+    const r = Math.random();
+    const kind = (canBomber && r < 0.22) ? 'bomber'
+               : (canBird   && r < 0.50) ? 'bird'
+               : 'cactus';
+    if (kind === 'bomber') {
+      spawnBomber();
+      const reach0 = S.spd * 0.62;
+      S.nextGap = reach0 * 1.3 + Math.random() * reach0;
+      return;
+    }
     if (kind === 'bird') {
       // Two heights: duckable, or jumpable-low.
       const low = Math.random() < 0.5;
@@ -149,6 +215,15 @@
     S.nextPlat = S.spd*0.75 + Math.random()*S.spd*0.7;
   }
 
+  // Bombers cruise above the skyline and drop bombs on a fuse. They only show
+  // up once you're moving fast enough that the extra pressure is earned.
+  function spawnBomber() {
+    S.obs.push({
+      kind:'bomber', x:W+40, y:GROUND-140, w:44, h:16, f:0,
+      drop: 0.35 + Math.random()*0.5,   // s until it releases
+    });
+  }
+
   function hit(a, b) {
     // Slightly forgiving player hitbox — feels fairer than pixel-exact.
     const px = 40 + 4, pw = (S.ducking ? 38 : 24) - 8;
@@ -173,7 +248,7 @@
     S.t += dt;
     for (const c of S.clouds) {
       c.x -= c.s * (S.state==='run' ? S.spd*0.12 : 8) * dt;
-      if (c.x < -60) { c.x = W+40; c.y = 24+Math.random()*70; }
+      if (c.x < -60) { c.x = W+40; c.y = 20+Math.random()*Math.max(60, GROUND*0.45); }
     }
     for (let i=S.parts.length-1;i>=0;i--) {
       const p = S.parts[i];
@@ -186,7 +261,11 @@
     if (S.state !== 'run') return;
 
     S.spd = Math.min(SPD_MAX, S.spd + SPD_ACC*dt);
-    S.dist += S.spd*dt;
+    S.dashT  = Math.max(0, S.dashT  - dt);
+    S.dashCd = Math.max(0, S.dashCd - dt);
+    // Dashing pushes the world past faster; that extra distance is the reward.
+    const eff = S.spd + (S.dashT > 0 ? DASH_V : 0);
+    S.dist += eff*dt;
     S.score = Math.floor(S.dist / 3);
 
     // jump w/ coyote + buffer
@@ -210,28 +289,71 @@
     }
     S.surf = surf;
 
-    if (S.y >= surf) { S.y = surf; S.vy = 0; S.onGround = true; }
+    if (S.y >= surf) { S.y = surf; S.vy = 0; S.onGround = true; S.jumps = 0; }
     else S.onGround = false;
     // Walked off a ledge: start falling from where we stood (coyote time still applies).
     if (!S.onGround && S.vy === 0) S.vy = 1;
 
-    S.nextGap  -= S.spd*dt;
-    S.nextPlat -= S.spd*dt;
+    S.nextGap  -= eff*dt;
+    S.nextPlat -= eff*dt;
     if (S.nextGap <= 0) spawn();
     if (S.nextPlat <= 0) spawnPlat();
 
+    for (let i=S.bombs.length-1;i>=0;i--) {
+      const b = S.bombs[i];
+      b.vy += GRAV*0.55*dt;
+      b.y  += b.vy*dt;
+      b.x  -= eff*dt;
+
+      // Bombs burst on whatever surface is under them (platform top or ground).
+      let floor = GROUND;
+      for (const pl of S.plats) if (b.x > pl.x && b.x < pl.x+pl.w) floor = Math.min(floor, pl.y);
+
+      const box = {x:b.x-b.r, y:b.y-b.r, w:b.r*2, h:b.r*2};
+      if (S.dashT <= 0 && hit(S, box)) { die(); S.bombs.splice(i,1); continue; }
+
+      if (b.y >= floor || b.x < -20) {
+        if (b.x >= -20) {
+          S.shake = Math.max(S.shake, .7);
+          for (let k=0;k<12;k++) S.parts.push({
+            x:b.x, y:floor-2, vx:(Math.random()-.5)*260, vy:-Math.random()*260,
+            life:.6, c:'#ff9f45'
+          });
+          // The blast itself is lethal for a moment.
+          S.blasts.push({x:b.x, y:floor, r:4, life:.22});
+        }
+        S.bombs.splice(i,1);
+      }
+    }
+
+    for (let i=S.blasts.length-1;i>=0;i--) {
+      const bl = S.blasts[i];
+      bl.life -= dt; bl.r += dt*150; bl.x -= eff*dt;
+      if (bl.life <= 0) { S.blasts.splice(i,1); continue; }
+      const box = {x:bl.x-bl.r, y:bl.y-bl.r*0.7, w:bl.r*2, h:bl.r*0.7};
+      if (S.dashT <= 0 && hit(S, box)) die();
+    }
+
     for (let i=S.plats.length-1;i>=0;i--) {
       const pl = S.plats[i];
-      pl.x -= S.spd*dt;
+      pl.x -= eff*dt;
       if (pl.x + pl.w < -30) S.plats.splice(i,1);
     }
 
     for (let i=S.obs.length-1;i>=0;i--) {
       const o = S.obs[i];
-      o.x -= S.spd*dt;
+      o.x -= eff*dt;
       if (o.kind==='bird') o.f += dt*10;
+      if (o.kind==='bomber') {
+        o.f += dt*6;
+        o.drop -= dt;
+        if (o.drop <= 0 && o.x > 60 && o.x < W) {
+          o.drop = 0.9 + Math.random()*0.8;
+          S.bombs.push({x:o.x+18, y:o.y+14, vy:60, r:6});
+        }
+      }
       if (o.x + o.w < -30) { S.obs.splice(i,1); continue; }
-      if (hit(S, o)) die();
+      if (S.dashT <= 0 && hit(S, o)) die();
     }
   }
 
@@ -239,7 +361,12 @@
   const px = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w|0,h|0); };
 
   function drawRunner() {
-    const c = '#e8e8ef';
+    const c = S.dashT > 0 ? '#7cf03d' : '#e8e8ef';
+    if (S.dashT > 0) {
+      ctx.globalAlpha = 0.35;
+      for (let i=1;i<=3;i++) px(40-i*13, S.y-(S.ducking?22:40), S.ducking?38:24, S.ducking?22:40, '#7cf03d');
+      ctx.globalAlpha = 1;
+    }
     const bob = S.onGround && S.state==='run' ? (Math.sin(S.t*18)>0?1:0) : 0;
     if (S.ducking) {
       px(40, S.y-22, 38, 22, c);
@@ -265,6 +392,16 @@
         px(x, o.y + o.h*0.30, 4, 10, '#4c9a2a');
         px(x + o.cw - 4, o.y + o.h*0.45, 4, 10, '#4c9a2a');
       }
+    } else if (o.kind === 'bomber') {
+      const bob = Math.sin(o.f) * 2;
+      // fuselage
+      px(o.x,      o.y+4+bob, 44, 10, '#8a8aa0');
+      px(o.x+34,   o.y+2+bob, 10,  7, '#a8a8c0');   // nose
+      px(o.x+6,    o.y+0+bob, 20,  4, '#6a6a86');   // wing
+      px(o.x+2,    o.y+13+bob, 8,  4, '#6a6a86');   // tail fin
+      px(o.x+38,   o.y+6+bob,  3,  3, '#ff4d6d');   // cockpit glint
+      // bomb bay glows just before release
+      if (o.drop < 0.22) px(o.x+16, o.y+13+bob, 6, 4, '#ff9f45');
     } else {
       const up = Math.sin(o.f) > 0;
       px(o.x+8, o.y+6, 16, 6, '#c9c9d6');
@@ -284,7 +421,8 @@
     px(0, GROUND, W, 2, '#2e2e3c');
     // speckled ground, scrolls with distance
     ctx.fillStyle = '#23232e';
-    for (let i=0;i<40;i++){
+    const specks = Math.ceil(W / 19);
+    for (let i=0;i<specks;i++){
       const x = ((i*137.5 - S.dist*0.6) % (W+40) + W+40) % (W+40) - 20;
       ctx.fillRect(x|0, GROUND + 8 + ((i*7)%14), 3, 2);
     }
@@ -295,17 +433,35 @@
       // sparse supports so it reads as a ledge, not a floating bar
       for (let x = pl.x+6; x < pl.x+pl.w-6; x += 26) px(x, pl.y+5, 2, pl.h-5, '#1b1b25');
     }
+    for (const b of S.bombs) {
+      px(b.x-4, b.y-5, 8, 10, '#e8e8ef');
+      px(b.x-2, b.y-8, 4, 3, '#6a6a7a');            // fin
+      px(b.x-1, b.y-11, 2, 3, '#ff9f45');           // fuse spark
+    }
+    for (const bl of S.blasts) {
+      ctx.globalAlpha = Math.max(0, bl.life / 0.22);
+      px(bl.x-bl.r, bl.y-bl.r*0.7, bl.r*2, bl.r*0.7, '#ff9f45');
+      ctx.globalAlpha = 1;
+    }
     for (const o of S.obs) drawObs(o);
-    for (const p of S.parts) { ctx.globalAlpha = Math.max(0,p.life); px(p.x,p.y,4,4,'#e8e8ef'); }
+    for (const p of S.parts) { ctx.globalAlpha = Math.max(0,p.life); px(p.x,p.y,4,4,p.c||'#e8e8ef'); }
     ctx.globalAlpha = 1;
 
     if (S.state !== 'dead') drawRunner();
 
     ctx.fillStyle = '#6a6a7a';
-    ctx.font = '600 13px ui-monospace,Menlo,monospace';
+    ctx.font = '600 15px ui-monospace,Menlo,monospace';
     ctx.textAlign = 'right';
-    ctx.fillText(String(S.score).padStart(5,'0'), W-14, 26);
-    if (S.best > 0) { ctx.fillStyle='#3d3d4c'; ctx.fillText('HI '+String(S.best).padStart(5,'0'), W-84, 26); }
+    ctx.fillText(String(S.score).padStart(5,'0'), W-20, 34);
+    if (S.best > 0) { ctx.fillStyle='#3d3d4c'; ctx.fillText('HI '+String(S.best).padStart(5,'0'), W-110, 34); }
+
+    // dash meter — fills back up over the cooldown
+    if (S.state === 'run') {
+      const bw = 54, bx = W-20-bw, by = 44;
+      px(bx, by, bw, 4, '#23232e');
+      const f = 1 - (S.dashCd / DASH_CD);
+      px(bx, by, bw*Math.max(0,Math.min(1,f)), 4, f >= 1 ? '#7cf03d' : '#3d3d4c');
+    }
 
     ctx.textAlign = 'center';
     if (S.state === 'ready') {
