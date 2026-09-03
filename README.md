@@ -36,26 +36,23 @@ the second time I decided I wasn't going to do it a third.
 
 ## 🎮 the game
 
-**Guess My Number.** I'm thinking of a number between 1 and 100.
-
-You get 7 guesses. Click one — it opens an issue, a bot replies *higher* or *lower*,
-and you go again. Beat it and your name goes on the board below.
+I wanted a game on my profile. GitHub strips `<script>` from READMEs, so instead:
+the thing below is a real endless runner, and this is a live preview of it.
 
 <p align="center">
-  <a href="https://github.com/RohanS358/RohanS358/issues/new?title=guess%3A%2050&body=I+guess+50.+%28Edit+the+number+in+the+title+to+guess+again.%29&labels=game"><img src="https://img.shields.io/badge/start%20with-50-4c1?style=for-the-badge" alt="Guess 50"></a>
+  <a href="https://rohans358.github.io/RohanS358/">
+    <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — click to play" width="100%">
+  </a>
 </p>
 
 <p align="center">
-  <sub>after that, just edit the number in the issue title to keep guessing.<br>
-  new secret number every week. no scripts run on this page — GitHub strips them —<br>
-  so the board is kept honest by a GitHub Action.</sub>
+  <b><a href="https://rohans358.github.io/RohanS358/">▶ play it</a></b><br>
+  <sub><kbd>space</kbd> to jump · hold longer to jump higher · <kbd>↓</kbd> to duck the birds<br>
+  works on mobile too. your best score saves locally. it gets faster for 40 seconds, then stops pretending to be fair.</sub>
 </p>
 
-### 🏆 hall of fame
-
-| player | guesses |
-|---|---|
-| *nobody yet* | — |
+<sub>~200 lines of canvas. coyote time, jump buffering, variable jump height — the three things
+that make a jump feel good instead of correct. <a href="docs/index.html">read it</a>, it's one file.</sub>
 
 ---
 

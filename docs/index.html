@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>RUN — rohan</title>
+<meta name="description" content="A tiny endless runner. Jump the cacti, duck the birds.">
+<style>
+  :root{
+    --bg:#0e0e12; --fg:#e8e8ef; --dim:#6a6a7a; --accent:#7cf03d; --danger:#ff4d6d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; padding:16px; overflow:hidden;
+    -webkit-user-select:none; user-select:none; touch-action:manipulation;
+  }
+  h1{
+    margin:0; font-size:13px; font-weight:600; letter-spacing:.32em;
+    color:var(--dim); text-transform:uppercase;
+  }
+  #wrap{position:relative; width:100%; max-width:760px}
+  canvas{
+    display:block; width:100%; height:auto; aspect-ratio:760/240;
+    background:#111117; border:1px solid #23232e; border-radius:10px;
+    image-rendering:pixelated;
+  }
+  #hint{color:var(--dim); font-size:12px; text-align:center; min-height:1.5em}
+  kbd{
+    background:#1c1c26; border:1px solid #2e2e3c; border-bottom-width:2px;
+    border-radius:4px; padding:1px 5px; font:inherit; font-size:11px; color:var(--fg);
+  }
+  a{color:var(--dim)}
+  a:hover{color:var(--accent)}
+  @media (max-width:600px){ #hint .desktop{display:none} }
+  @media (min-width:601px){ #hint .touch{display:none} }
+</style>
+</head>
+<body>
+
+<h1>run</h1>
+<div id="wrap"><canvas id="c" width="760" height="240"></canvas></div>
+<div id="hint">
+  <span class="desktop"><kbd>space</kbd> jump &nbsp;·&nbsp; <kbd>↓</kbd> duck &nbsp;·&nbsp; hold to jump higher</span>
+  <span class="touch">tap to jump · touch bottom half to duck</span>
+</div>
+<div id="hint"><a href="https://github.com/RohanS358">← back to profile</a></div>
+
+<script>
+(() => {
+  const cv = document.getElementById('c');
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const GROUND = H - 42;
+
+  // ---- tuning -------------------------------------------------------------
+  const GRAV      = 2400;   // px/s^2
+  const JUMP_V    = -700;   // initial jump velocity
+  const CUT       = 0.42;   // velocity kept when jump released early (variable height)
+  const COYOTE    = 0.08;   // s of forgiveness after leaving ground
+  const BUFFER    = 0.10;   // s of jump-input buffering before landing
+  const SPD0      = 320;    // starting scroll speed px/s
+  const SPD_MAX   = 760;
+  const SPD_ACC   = 11;     // px/s per second
+
+  const best = (() => {
+    try { return parseInt(localStorage.getItem('run.best') || '0', 10) || 0; }
+    catch { return 0; }   // private mode / blocked storage
+  })();
+
+  let S;
+  function reset() {
+    S = {
+      t:0, spd:SPD0, dist:0, score:0, best,
+      y:GROUND, vy:0, ducking:false, onGround:true,
+      coyote:0, buffer:0, jumpHeld:false,
+      obs:[], nextGap:60, clouds:[], parts:[],
+      state:'ready',        // ready | run | dead
+      deadT:0, shake:0,
+    };
+    for (let i=0;i<5;i++) S.clouds.push({x:Math.random()*W, y:24+Math.random()*70, s:.25+Math.random()*.35});
+  }
+  reset();
+
+  // ---- input --------------------------------------------------------------
+  const press = () => {
+    if (S.state === 'ready') { S.state = 'run'; return; }
+    if (S.state === 'dead')  { if (S.deadT > .5) { const b=S.best; reset(); S.best=b; S.state='run'; } return; }
+    S.buffer = BUFFER; S.jumpHeld = true;
+  };
+  const release = () => {
+    S.jumpHeld = false;
+    if (S.vy < 0) S.vy *= CUT;          // variable jump height
+  };
+
+  addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); if(!e.repeat) press(); }
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') { e.preventDefault(); S.ducking = true; }
+  });
+  addEventListener('keyup', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') release();
+    if (e.code === 'ArrowDown' || e.code === 'KeyS') S.ducking = false;
+  });
+  const touchDuck = e => {
+    const r = cv.getBoundingClientRect();
+    const ty = e.touches[0].clientY - r.top;
+    if (ty > r.height * 0.55 && S.state === 'run') { S.ducking = true; } else { press(); }
+  };
+  cv.addEventListener('touchstart', e => { e.preventDefault(); touchDuck(e); }, {passive:false});
+  cv.addEventListener('touchend',   e => { e.preventDefault(); S.ducking = false; release(); }, {passive:false});
+  cv.addEventListener('mousedown',  e => { e.preventDefault(); press(); });
+  addEventListener('mouseup', release);
+
+  // ---- world --------------------------------------------------------------
+  function spawn() {
+    // Bias toward cacti early; birds only once it's fast enough to be fair.
+    const canBird = S.spd > 420;
+    const kind = (canBird && Math.random() < 0.3) ? 'bird' : 'cactus';
+    if (kind === 'bird') {
+      // Two heights: duckable, or jumpable-low.
+      const low = Math.random() < 0.5;
+      S.obs.push({kind, x:W+20, y: low ? GROUND-34 : GROUND-64, w:30, h:20, f:0});
+    } else {
+      const big = Math.random() < 0.35;
+      const n = 1 + (Math.random()<0.3 ? 1 : 0);   // clusters of 1-2
+      const w = big ? 22 : 15, h = big ? 42 : 30;
+      S.obs.push({kind, x:W+20, y:GROUND-h, w:w*n + (n-1)*4, h, n, cw:w});
+    }
+    // Gap scales with speed so it stays clearable.
+    const reach = S.spd * 0.62;
+    S.nextGap = reach + Math.random() * reach * 0.85;
+  }
+
+  function hit(a, b) {
+    // Slightly forgiving player hitbox — feels fairer than pixel-exact.
+    const px = 40 + 4, pw = (S.ducking ? 38 : 24) - 8;
+    const ph = (S.ducking ? 22 : 40) - 6;
+    const py = S.y - (S.ducking ? 22 : 40) + 4;
+    return px < b.x + b.w && px + pw > b.x && py < b.y + b.h && py + ph > b.y;
+  }
+
+  function die() {
+    S.state = 'dead'; S.deadT = 0; S.shake = 1;
+    if (S.score > S.best) {
+      S.best = S.score;
+      try { localStorage.setItem('run.best', String(S.score)); } catch {}
+    }
+    for (let i=0;i<14;i++) S.parts.push({
+      x:52, y:S.y-20, vx:(Math.random()-.5)*300, vy:-Math.random()*320, life:1
+    });
+  }
+
+  // ---- update -------------------------------------------------------------
+  function update(dt) {
+    S.t += dt;
+    for (const c of S.clouds) {
+      c.x -= c.s * (S.state==='run' ? S.spd*0.12 : 8) * dt;
+      if (c.x < -60) { c.x = W+40; c.y = 24+Math.random()*70; }
+    }
+    for (let i=S.parts.length-1;i>=0;i--) {
+      const p = S.parts[i];
+      p.vy += GRAV*0.5*dt; p.x += p.vx*dt; p.y += p.vy*dt; p.life -= dt*1.6;
+      if (p.life <= 0) S.parts.splice(i,1);
+    }
+    if (S.shake > 0) S.shake = Math.max(0, S.shake - dt*3);
+
+    if (S.state === 'dead') { S.deadT += dt; return; }
+    if (S.state !== 'run') return;
+
+    S.spd = Math.min(SPD_MAX, S.spd + SPD_ACC*dt);
+    S.dist += S.spd*dt;
+    S.score = Math.floor(S.dist / 12);
+
+    // jump w/ coyote + buffer
+    S.coyote = S.onGround ? COYOTE : Math.max(0, S.coyote - dt);
+    S.buffer = Math.max(0, S.buffer - dt);
+    if (S.buffer > 0 && S.coyote > 0) {
+      S.vy = JUMP_V; S.onGround = false; S.coyote = 0; S.buffer = 0;
+    }
+
+    S.vy += GRAV*dt;
+    S.y  += S.vy*dt;
+    if (S.y >= GROUND) { S.y = GROUND; S.vy = 0; S.onGround = true; }
+    else S.onGround = false;
+
+    S.nextGap -= S.spd*dt;
+    if (S.nextGap <= 0) spawn();
+
+    for (let i=S.obs.length-1;i>=0;i--) {
+      const o = S.obs[i];
+      o.x -= S.spd*dt;
+      if (o.kind==='bird') o.f += dt*10;
+      if (o.x + o.w < -30) { S.obs.splice(i,1); continue; }
+      if (hit(S, o)) die();
+    }
+  }
+
+  // ---- draw ---------------------------------------------------------------
+  const px = (x,y,w,h,c) => { ctx.fillStyle=c; ctx.fillRect(x|0,y|0,w|0,h|0); };
+
+  function drawRunner() {
+    const c = '#e8e8ef';
+    const bob = S.onGround && S.state==='run' ? (Math.sin(S.t*18)>0?1:0) : 0;
+    if (S.ducking) {
+      px(40, S.y-22, 38, 22, c);
+      px(70, S.y-20, 8, 8, '#111117');           // eye-ish notch
+      px(44, S.y-2, 10, 2, c); px(60, S.y-2, 10, 2, c);
+    } else {
+      px(40, S.y-40, 24, 26, c);                 // body/head
+      px(56, S.y-34, 6, 6, '#111117');           // eye
+      px(40, S.y-14, 8, 14+(bob?0:0), c);        // legs
+      px(54, S.y-14, 8, 14, c);
+      if (S.onGround && S.state==='run') {
+        px(40, S.y-14+ (bob?6:0), 8, 8, '#111117');
+        px(54, S.y-14+ (bob?0:6), 8, 8, '#111117');
+      }
+    }
+  }
+
+  function drawObs(o) {
+    if (o.kind === 'cactus') {
+      for (let i=0;i<(o.n||1);i++){
+        const x = o.x + i*(o.cw+4);
+        px(x + o.cw/2 - 3, o.y, 6, o.h, '#4c9a2a');
+        px(x, o.y + o.h*0.30, 4, 10, '#4c9a2a');
+        px(x + o.cw - 4, o.y + o.h*0.45, 4, 10, '#4c9a2a');
+      }
+    } else {
+      const up = Math.sin(o.f) > 0;
+      px(o.x+8, o.y+6, 16, 6, '#c9c9d6');
+      px(o.x+22, o.y+4, 6, 5, '#c9c9d6');
+      px(o.x+2, up ? o.y : o.y+11, 12, 5, '#c9c9d6');
+    }
+  }
+
+  function draw() {
+    ctx.save();
+    if (S.shake > 0) ctx.translate((Math.random()-.5)*6*S.shake, (Math.random()-.5)*6*S.shake);
+    ctx.clearRect(-10,-10,W+20,H+20);
+    px(-10,-10,W+20,H+20,'#111117');
+
+    for (const c of S.clouds) { px(c.x, c.y, 26, 5, '#1b1b25'); px(c.x+7, c.y-4, 14, 5, '#1b1b25'); }
+
+    px(0, GROUND, W, 2, '#2e2e3c');
+    // speckled ground, scrolls with distance
+    ctx.fillStyle = '#23232e';
+    for (let i=0;i<40;i++){
+      const x = ((i*137.5 - S.dist*0.6) % (W+40) + W+40) % (W+40) - 20;
+      ctx.fillRect(x|0, GROUND + 8 + ((i*7)%14), 3, 2);
+    }
+
+    for (const o of S.obs) drawObs(o);
+    for (const p of S.parts) { ctx.globalAlpha = Math.max(0,p.life); px(p.x,p.y,4,4,'#e8e8ef'); }
+    ctx.globalAlpha = 1;
+
+    if (S.state !== 'dead') drawRunner();
+
+    ctx.fillStyle = '#6a6a7a';
+    ctx.font = '600 13px ui-monospace,Menlo,monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText(String(S.score).padStart(5,'0'), W-14, 26);
+    if (S.best > 0) { ctx.fillStyle='#3d3d4c'; ctx.fillText('HI '+String(S.best).padStart(5,'0'), W-84, 26); }
+
+    ctx.textAlign = 'center';
+    if (S.state === 'ready') {
+      ctx.fillStyle = '#e8e8ef'; ctx.font = '600 16px ui-monospace,Menlo,monospace';
+      ctx.fillText('press space to run', W/2, H/2 - 6);
+    } else if (S.state === 'dead' && S.deadT > .35) {
+      ctx.fillStyle = '#ff4d6d'; ctx.font='600 18px ui-monospace,Menlo,monospace';
+      ctx.fillText('dead', W/2, H/2 - 14);
+      ctx.fillStyle = '#6a6a7a'; ctx.font='600 12px ui-monospace,Menlo,monospace';
+      ctx.fillText(S.score >= S.best && S.score>0 ? 'new best · press space' : 'press space', W/2, H/2 + 8);
+    }
+    ctx.restore();
+  }
+
+  // ---- loop ---------------------------------------------------------------
+  let last = performance.now();
+  function frame(now) {
+    // Clamp dt so a backgrounded tab doesn't teleport the player into a cactus.
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    update(dt); draw();
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
