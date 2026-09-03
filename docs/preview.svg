@@ -25,6 +25,25 @@
       <animateTransform attributeName="transform" type="translate" from="760 0" to="0 0" dur="3.2s" repeatCount="indefinite"/></g>
   </g>
 
+  <!-- platforms -->
+  <g>
+    <g>
+      <rect x="0" y="94" width="150" height="3" fill="#3d3d4c"/>
+      <rect x="0" y="97" width="150" height="2" fill="#23232e"/>
+      <rect x="8" y="99" width="2" height="51" fill="#1b1b25"/>
+      <rect x="60" y="99" width="2" height="51" fill="#1b1b25"/>
+      <rect x="112" y="99" width="2" height="51" fill="#1b1b25"/>
+      <animateTransform attributeName="transform" type="translate" from="790 0" to="-170 0" dur="5.2s" repeatCount="indefinite"/>
+    </g>
+    <g>
+      <rect x="0" y="108" width="110" height="3" fill="#3d3d4c"/>
+      <rect x="0" y="111" width="110" height="2" fill="#23232e"/>
+      <rect x="10" y="113" width="2" height="37" fill="#1b1b25"/>
+      <rect x="62" y="113" width="2" height="37" fill="#1b1b25"/>
+      <animateTransform attributeName="transform" type="translate" from="790 0" to="-130 0" dur="5.2s" begin="2.6s" repeatCount="indefinite"/>
+    </g>
+  </g>
+
   <!-- cacti: scroll right-to-left, timed so the runner's jump lines up -->
   <g fill="#4c9a2a">
     <g>
@@ -74,5 +93,4 @@
   <text x="746" y="30" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" font-weight="600" fill="#6a6a7a">01337</text>
 
   <text x="24" y="30" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="600" fill="#3d3d4c" letter-spacing="4">RUN</text>
-  <text x="380" y="188" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11" fill="#7cf03d">▶ click to play</text>
 </svg>

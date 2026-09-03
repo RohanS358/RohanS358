@@ -36,23 +36,23 @@ the second time I decided I wasn't going to do it a third.
 
 ## 🎮 the game
 
-I wanted a game on my profile. GitHub strips `<script>` from READMEs, so instead:
-the thing below is a real endless runner, and this is a live preview of it.
+I wanted a game on my profile. GitHub strips `<script>` from READMEs, so the real
+one lives on Pages — this is just it, animated.
 
 <p align="center">
-  <a href="https://rohans358.github.io/RohanS358/">
-    <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — click to play" width="100%">
-  </a>
+  <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — an endless runner" width="100%">
 </p>
 
 <p align="center">
-  <b><a href="https://rohans358.github.io/RohanS358/">▶ play it</a></b><br>
-  <sub><kbd>space</kbd> to jump · hold longer to jump higher · <kbd>↓</kbd> to duck the birds<br>
-  works on mobile too. your best score saves locally. it gets faster for 40 seconds, then stops pretending to be fair.</sub>
+  <b><a href="https://rohans358.github.io/RohanS358/">▶ play it here</a></b><br>
+  <sub><kbd>space</kbd> to jump · hold longer to jump higher · <kbd>↓</kbd> to duck<br>
+  jump between platforms, don't hit the cacti, don't get clipped by a bird.<br>
+  works on mobile. best score saves locally. gets faster for 40 seconds, then stops pretending to be fair.</sub>
 </p>
 
-<sub>~200 lines of canvas. coyote time, jump buffering, variable jump height — the three things
-that make a jump feel good instead of correct. <a href="docs/index.html">read it</a>, it's one file.</sub>
+<sub>~250 lines of canvas, one file, no dependencies. coyote time, jump buffering, variable
+jump height and one-way platforms — the things that make a jump feel good instead of merely
+correct. <a href="docs/index.html">read it</a>.</sub>
 
 ---
 
