@@ -77,7 +77,7 @@
       t:0, spd:SPD0, dist:0, score:0, best,
       y:GROUND, vy:0, ducking:false, onGround:true,
       coyote:0, buffer:0, jumpHeld:false,
-      obs:[], plats:[], nextGap:60, nextPlat:520, clouds:[], parts:[],
+      obs:[], plats:[], nextGap:60, nextPlat:340, clouds:[], parts:[],
       surf:GROUND,          // surface currently standing on / falling toward
       state:'ready',        // ready | run | dead
       deadT:0, shake:0,
@@ -146,7 +146,7 @@
     if (Math.random() < 0.3 && w > 130) {
       S.obs.push({kind:'cactus', x:W+20+w*0.55, y:GROUND-h-30, w:15, h:30, n:1, cw:15});
     }
-    S.nextPlat = S.spd*1.1 + Math.random()*S.spd*1.4;
+    S.nextPlat = S.spd*0.75 + Math.random()*S.spd*0.7;
   }
 
   function hit(a, b) {
@@ -187,7 +187,7 @@
 
     S.spd = Math.min(SPD_MAX, S.spd + SPD_ACC*dt);
     S.dist += S.spd*dt;
-    S.score = Math.floor(S.dist / 12);
+    S.score = Math.floor(S.dist / 3);
 
     // jump w/ coyote + buffer
     S.coyote = S.onGround ? COYOTE : Math.max(0, S.coyote - dt);
