@@ -393,15 +393,6 @@
       if (S.dashT <= 0 && hit(S, o)) die();
     }
 
-    // Only the LEADING face of a building is solid — you crash into the wall you
-    // run at. The rest of the body stays passable so a jump up through the deck
-    // (one-way, handled above) still works from underneath.
-    for (const pl of S.plats) {
-      if (S.dashT > 0) break;
-      if (S.y <= pl.y + 2) continue;                 // at or above deck height: fine
-      const FACE = 6;                                // just the front lip
-      if (hit(S, {x:pl.x+3, y:pl.y+5, w:FACE, h:GROUND-(pl.y+5)})) { die(); break; }
-    }
   }
 
   // ---- draw ---------------------------------------------------------------
@@ -477,7 +468,8 @@
     for (const pl of S.plats) {
       // Every platform is a structure standing on the ground, not a floating
       // slab: a dim masonry body carries it down to the floor, with a lit deck
-      // on top. Kept dark so the body reads as background, not as an obstacle.
+      // on top. The body is scenery you run straight through — only the deck is
+      // solid — so it's drawn dark enough to read as background, never as a wall.
       const bodyTop = pl.y + 5;
       const bodyH   = GROUND - bodyTop;
       if (bodyH > 0) {
