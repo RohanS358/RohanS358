@@ -58,7 +58,8 @@ one lives on Pages — full screen, and it does not go easy on you.
 <p align="center">
   <sub>hop the platforms, clear the cacti, duck the birds — and watch the sky,
   because <b>bombers</b> show up once you're fast enough and they drop live ordnance.<br>
-  every <b>250 points</b> adds a storey to the skyline. by 2,500 you're ten floors up.</sub>
+  every <b>1,000 points</b> adds a storey to the skyline — and they come as staircases,
+  so you climb them step by step rather than leaping the impossible.</sub>
 </p>
 
 <sub>~350 lines of canvas, one file, no dependencies. coyote time, jump buffering, variable

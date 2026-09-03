@@ -207,7 +207,7 @@
   // double jump reaches ~4 — high enough to feel like climbing, low enough that
   // every tier stays reachable from the one below.
   const STOREY   = 48;
-  const MILESTONE = 250;   // one new storey unlocked per this many points
+  const MILESTONE = 1000;  // one new storey unlocked per this many points
 
   // How many storeys are in play right now: grows with score, but never taller
   // than the viewport can actually show above the floor.
@@ -217,22 +217,34 @@
     return Math.min(earned, fits);
   }
 
+  // A double jump climbs ~171px, so anything above storey 3 is unreachable in a
+  // single leap from the ground. Platforms therefore spawn as connected
+  // staircases: each step is at most one storey above the last, so every tier
+  // is reached by climbing rather than by one impossible jump.
   function spawnPlat() {
     const n = tiers();
-    // Weight toward the lower storeys so the ground route stays viable; higher
-    // tiers show up more often the more of them you've unlocked.
-    const lvl = 1 + Math.floor(Math.pow(Math.random(), 1.7) * n);
-    const h = lvl * STOREY;
-    const w = 90 + Math.random()*130;
-    S.plats.push({ x:W+20, y:GROUND-h, w, h, lvl });
-    // Sometimes perch a cactus on top — a reason to leave the platform again.
-    if (Math.random() < 0.3 && w > 130) {
-      S.obs.push({kind:'cactus', x:W+20+w*0.55, y:GROUND-h-30, w:15, h:30, n:1, cw:15});
+    const top = 1 + Math.floor(Math.pow(Math.random(), 1.6) * n);   // how high this run goes
+    const stepW = 74 + Math.random()*46;
+    let x = W + 20;
+
+    for (let lvl = 1; lvl <= top; lvl++) {
+      const h = lvl * STOREY;
+      // Last step of the run gets a wider landing to stand and recover on.
+      const w = (lvl === top) ? stepW + 40 + Math.random()*60 : stepW;
+      S.plats.push({ x, y:GROUND-h, w, h, lvl });
+      // Horizontal gap between steps: comfortably inside a jump's air time.
+      x += w + 26 + Math.random()*34;
     }
-    // More storeys in play means platforms should come a little thicker, so
-    // there's something to jump *to* up there.
-    const density = 1 - Math.min(0.4, (n-1) * 0.06);
-    S.nextPlat = (S.spd*0.75 + Math.random()*S.spd*0.7) * density;
+
+    // Occasionally perch a cactus on the summit — a reason to move on.
+    const summit = S.plats[S.plats.length-1];
+    if (summit && Math.random() < 0.3 && summit.w > 130) {
+      S.obs.push({kind:'cactus', x:summit.x+summit.w*0.55, y:summit.y-30, w:15, h:30, n:1, cw:15});
+    }
+
+    // Space runs out by how long this one was, plus breathing room.
+    const runLen = x - (W + 20);
+    S.nextPlat = runLen + S.spd*0.8 + Math.random()*S.spd*0.6;
   }
 
   // Bombers cruise above the skyline and drop bombs on a fuse. They only show
@@ -380,6 +392,16 @@
       if (o.x + o.w < -30) { S.obs.splice(i,1); continue; }
       if (S.dashT <= 0 && hit(S, o)) die();
     }
+
+    // Only the LEADING face of a building is solid — you crash into the wall you
+    // run at. The rest of the body stays passable so a jump up through the deck
+    // (one-way, handled above) still works from underneath.
+    for (const pl of S.plats) {
+      if (S.dashT > 0) break;
+      if (S.y <= pl.y + 2) continue;                 // at or above deck height: fine
+      const FACE = 6;                                // just the front lip
+      if (hit(S, {x:pl.x+3, y:pl.y+5, w:FACE, h:GROUND-(pl.y+5)})) { die(); break; }
+    }
   }
 
   // ---- draw ---------------------------------------------------------------
@@ -453,18 +475,25 @@
     }
 
     for (const pl of S.plats) {
-      px(pl.x, pl.y, pl.w, 3, '#3d3d4c');                    // top surface
-      px(pl.x, pl.y+3, pl.w, 2, '#23232e');
-      // Short stubs, not full-height columns — at ten storeys, legs all the way
-      // down to the floor would draw a solid wall and hide the play area.
-      const leg = Math.min(pl.h - 5, 14);
-      for (let x = pl.x+6; x < pl.x+pl.w-6; x += 26) px(x, pl.y+5, 2, leg, '#1b1b25');
-      // Higher storeys sit dimmer, giving the stack a sense of depth.
-      if (pl.lvl > 1) {
-        ctx.globalAlpha = Math.max(0.25, 1 - pl.lvl*0.06);
-        px(pl.x, pl.y, pl.w, 3, '#4a4a5e');
-        ctx.globalAlpha = 1;
+      // Every platform is a structure standing on the ground, not a floating
+      // slab: a dim masonry body carries it down to the floor, with a lit deck
+      // on top. Kept dark so the body reads as background, not as an obstacle.
+      const bodyTop = pl.y + 5;
+      const bodyH   = GROUND - bodyTop;
+      if (bodyH > 0) {
+        px(pl.x + 3, bodyTop, pl.w - 6, bodyH, '#15151d');          // solid mass
+        px(pl.x + 3, bodyTop, 1, bodyH, '#1e1e28');                 // edge highlight
+        px(pl.x + pl.w - 4, bodyTop, 1, bodyH, '#1e1e28');
+        // window slits, so it reads as a building rather than a block
+        for (let wy = bodyTop + 12; wy < GROUND - 10; wy += 22) {
+          for (let wx = pl.x + 10; wx < pl.x + pl.w - 12; wx += 20) {
+            px(wx, wy, 5, 6, '#1b1b26');
+          }
+        }
       }
+      // deck
+      px(pl.x, pl.y, pl.w, 3, '#4a4a5e');
+      px(pl.x, pl.y+3, pl.w, 2, '#2a2a38');
     }
     for (const b of S.bombs) {
       px(b.x-4, b.y-5, 8, 10, '#e8e8ef');
