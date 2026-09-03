@@ -1,96 +1,58 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="760" height="200" viewBox="0 0 760 200" role="img" aria-label="RUN - a tiny endless runner">
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="200" viewBox="0 0 760 200" role="img" aria-label="RUN — an endless runner with platforms">
   <rect width="760" height="200" rx="10" fill="#111117"/>
   <rect x="0.5" y="0.5" width="759" height="199" rx="10" fill="none" stroke="#23232e"/>
 
   <!-- clouds -->
   <g fill="#1b1b25">
-    <g><rect x="0" y="34" width="26" height="5"/><rect x="7" y="30" width="14" height="5"/>
-      <animateTransform attributeName="transform" type="translate" from="800 0" to="-60 0" dur="14s" repeatCount="indefinite"/></g>
-    <g><rect x="0" y="58" width="26" height="5"/><rect x="7" y="54" width="14" height="5"/>
-      <animateTransform attributeName="transform" type="translate" from="800 0" to="-60 0" dur="19s" repeatCount="indefinite"/></g>
-    <g><rect x="0" y="22" width="26" height="5"/><rect x="7" y="18" width="14" height="5"/>
-      <animateTransform attributeName="transform" type="translate" from="800 0" to="-60 0" dur="24s" repeatCount="indefinite"/></g>
+    <rect x="120" y="34" width="26" height="5"/><rect x="127" y="30" width="14" height="5"/>
+    <rect x="410" y="58" width="26" height="5"/><rect x="417" y="54" width="14" height="5"/>
+    <rect x="640" y="26" width="26" height="5"/><rect x="647" y="22" width="14" height="5"/>
+  </g>
+
+  <!-- platforms -->
+  <g>
+    <rect x="250" y="94" width="150" height="3" fill="#3d3d4c"/>
+    <rect x="250" y="97" width="150" height="2" fill="#23232e"/>
+    <rect x="258" y="99" width="2" height="51" fill="#1b1b25"/>
+    <rect x="310" y="99" width="2" height="51" fill="#1b1b25"/>
+    <rect x="362" y="99" width="2" height="51" fill="#1b1b25"/>
+
+    <rect x="500" y="108" width="110" height="3" fill="#3d3d4c"/>
+    <rect x="500" y="111" width="110" height="2" fill="#23232e"/>
+    <rect x="510" y="113" width="2" height="37" fill="#1b1b25"/>
+    <rect x="562" y="113" width="2" height="37" fill="#1b1b25"/>
   </g>
 
   <!-- ground -->
   <rect x="0" y="150" width="760" height="2" fill="#2e2e3c"/>
   <g fill="#23232e">
-    <g><rect x="40" y="160" width="3" height="2"/><rect x="180" y="166" width="3" height="2"/>
-       <rect x="330" y="158" width="3" height="2"/><rect x="470" y="168" width="3" height="2"/>
-       <rect x="620" y="162" width="3" height="2"/><rect x="740" y="159" width="3" height="2"/>
-      <animateTransform attributeName="transform" type="translate" from="0 0" to="-760 0" dur="3.2s" repeatCount="indefinite"/></g>
-    <g><rect x="40" y="160" width="3" height="2"/><rect x="180" y="166" width="3" height="2"/>
-       <rect x="330" y="158" width="3" height="2"/><rect x="470" y="168" width="3" height="2"/>
-       <rect x="620" y="162" width="3" height="2"/><rect x="740" y="159" width="3" height="2"/>
-      <animateTransform attributeName="transform" type="translate" from="760 0" to="0 0" dur="3.2s" repeatCount="indefinite"/></g>
+    <rect x="40" y="160" width="3" height="2"/><rect x="180" y="166" width="3" height="2"/>
+    <rect x="330" y="158" width="3" height="2"/><rect x="470" y="168" width="3" height="2"/>
+    <rect x="620" y="162" width="3" height="2"/><rect x="700" y="159" width="3" height="2"/>
+    <rect x="110" y="171" width="3" height="2"/><rect x="255" y="163" width="3" height="2"/>
+    <rect x="545" y="157" width="3" height="2"/>
   </g>
 
-  <!-- platforms -->
-  <g>
-    <g>
-      <rect x="0" y="94" width="150" height="3" fill="#3d3d4c"/>
-      <rect x="0" y="97" width="150" height="2" fill="#23232e"/>
-      <rect x="8" y="99" width="2" height="51" fill="#1b1b25"/>
-      <rect x="60" y="99" width="2" height="51" fill="#1b1b25"/>
-      <rect x="112" y="99" width="2" height="51" fill="#1b1b25"/>
-      <animateTransform attributeName="transform" type="translate" from="790 0" to="-170 0" dur="5.2s" repeatCount="indefinite"/>
-    </g>
-    <g>
-      <rect x="0" y="108" width="110" height="3" fill="#3d3d4c"/>
-      <rect x="0" y="111" width="110" height="2" fill="#23232e"/>
-      <rect x="10" y="113" width="2" height="37" fill="#1b1b25"/>
-      <rect x="62" y="113" width="2" height="37" fill="#1b1b25"/>
-      <animateTransform attributeName="transform" type="translate" from="790 0" to="-130 0" dur="5.2s" begin="2.6s" repeatCount="indefinite"/>
-    </g>
-  </g>
-
-  <!-- cacti: scroll right-to-left, timed so the runner's jump lines up -->
+  <!-- cacti -->
   <g fill="#4c9a2a">
-    <g>
-      <rect x="6" y="120" width="6" height="30"/><rect x="0" y="129" width="4" height="10"/><rect x="11" y="134" width="4" height="10"/>
-      <animateTransform attributeName="transform" type="translate" from="790 0" to="-30 0" dur="2.6s" repeatCount="indefinite"/>
-    </g>
-    <g>
-      <rect x="8" y="108" width="6" height="42"/><rect x="0" y="121" width="4" height="10"/><rect x="14" y="127" width="4" height="10"/>
-      <animateTransform attributeName="transform" type="translate" from="790 0" to="-30 0" dur="2.6s" begin="1.3s" repeatCount="indefinite"/>
-    </g>
+    <rect x="176" y="120" width="6" height="30"/><rect x="170" y="129" width="4" height="10"/><rect x="181" y="134" width="4" height="10"/>
+    <rect x="668" y="108" width="6" height="42"/><rect x="660" y="121" width="4" height="10"/><rect x="674" y="127" width="4" height="10"/>
+    <rect x="330" y="64" width="6" height="30"/><rect x="324" y="73" width="4" height="10"/><rect x="335" y="78" width="4" height="10"/>
   </g>
 
   <!-- bird -->
   <g fill="#c9c9d6">
-    <g>
-      <rect x="8" y="92" width="16" height="6"/><rect x="22" y="90" width="6" height="5"/>
-      <rect x="2" y="86" width="12" height="5">
-        <animate attributeName="y" values="86;97;86" dur="0.28s" repeatCount="indefinite"/>
-      </rect>
-      <animateTransform attributeName="transform" type="translate" from="800 0" to="-40 0" dur="4.1s" begin="2.2s" repeatCount="indefinite"/>
-    </g>
+    <rect x="438" y="66" width="16" height="6"/><rect x="452" y="64" width="6" height="5"/><rect x="432" y="60" width="12" height="5"/>
   </g>
 
-  <!-- runner: jump cycle synced to the 2.6s cactus cadence -->
-  <g>
-    <g>
-      <animateTransform attributeName="transform" type="translate"
-        values="0,0; 0,0; 0,-62; 0,-88; 0,-62; 0,0; 0,0"
-        keyTimes="0; 0.60; 0.72; 0.80; 0.88; 0.97; 1"
-        dur="2.6s" repeatCount="indefinite" calcMode="spline"
-        keySplines="0 0 1 1; .2 .7 .5 1; .4 0 .6 1; .5 0 .8 .3; .5 0 1 1; 0 0 1 1"/>
-      <!-- body -->
-      <rect x="40" y="110" width="24" height="26" fill="#e8e8ef"/>
-      <rect x="56" y="116" width="6" height="6" fill="#111117"/>
-      <!-- legs: alternate while grounded -->
-      <rect x="40" y="136" width="8" height="14" fill="#e8e8ef"/>
-      <rect x="54" y="136" width="8" height="14" fill="#e8e8ef"/>
-      <rect x="40" y="136" width="8" height="8" fill="#111117">
-        <animate attributeName="y" values="136;144;136" dur="0.22s" repeatCount="indefinite"/>
-      </rect>
-      <rect x="54" y="136" width="8" height="8" fill="#111117">
-        <animate attributeName="y" values="144;136;144" dur="0.22s" repeatCount="indefinite"/>
-      </rect>
-    </g>
+  <!-- runner, mid-jump toward the first platform -->
+  <g transform="translate(0,-46)">
+    <rect x="70" y="110" width="24" height="26" fill="#e8e8ef"/>
+    <rect x="86" y="116" width="6" height="6" fill="#111117"/>
+    <rect x="70" y="136" width="8" height="14" fill="#e8e8ef"/>
+    <rect x="84" y="136" width="8" height="14" fill="#e8e8ef"/>
   </g>
-
-  <text x="746" y="30" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" font-weight="600" fill="#6a6a7a">01337</text>
 
   <text x="24" y="30" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" font-weight="600" fill="#3d3d4c" letter-spacing="4">RUN</text>
+  <text x="736" y="30" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" font-weight="600" fill="#6a6a7a">01337</text>
 </svg>

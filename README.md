@@ -37,7 +37,7 @@ the second time I decided I wasn't going to do it a third.
 ## 🎮 the game
 
 I wanted a game on my profile. GitHub strips `<script>` from READMEs, so the real
-one lives on Pages — this is just it, animated.
+one lives on Pages.
 
 <p align="center">
   <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — an endless runner" width="100%">
