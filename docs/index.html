@@ -95,6 +95,16 @@
     catch { return 0; }   // private mode / blocked storage
   })();
 
+  const board = (() => {
+    try { return JSON.parse(localStorage.getItem('run.board') || '[]'); }
+    catch { return []; }   // private mode / blocked storage / corrupt json
+  })();
+  function saveBoard() {
+    board.sort((a,b) => b-a);
+    board.length = Math.min(board.length, 5);
+    try { localStorage.setItem('run.board', JSON.stringify(board)); } catch {}
+  }
+
   let S;
   function reset() {
     S = {
@@ -270,6 +280,7 @@
       S.best = S.score;
       try { localStorage.setItem('run.best', String(S.score)); } catch {}
     }
+    if (S.score > 0) { board.push(S.score); saveBoard(); }
     for (let i=0;i<14;i++) S.parts.push({
       x:52, y:S.y-20, vx:(Math.random()-.5)*300, vy:-Math.random()*320, life:1
     });
@@ -542,6 +553,14 @@
       ctx.fillText('dead', W/2, H/2 - 14);
       ctx.fillStyle = '#6a6a7a'; ctx.font='600 12px ui-monospace,Menlo,monospace';
       ctx.fillText(S.score >= S.best && S.score>0 ? 'new best · press space' : 'press space', W/2, H/2 + 8);
+      if (board.length) {
+        ctx.font = '600 11px ui-monospace,Menlo,monospace';
+        ctx.fillText('LEADERBOARD', W/2, H/2 + 30);
+        board.forEach((s, i) => {
+          ctx.fillStyle = s === S.score ? '#7cf03d' : '#4a4a5c';
+          ctx.fillText((i+1) + '.  ' + String(s).padStart(5,'0'), W/2, H/2 + 46 + i*15);
+        });
+      }
     }
     ctx.restore();
   }
