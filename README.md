@@ -41,7 +41,7 @@
 | <img src="https://raw.githubusercontent.com/RohanS358/refill-nutrition/master/logo.svg" width="48"> | **Refill Nutrition** | Marketing site for a sports nutrition brand with an inline CMS layer so staff can edit copy without redeploying. | [Live](https://refill-pied.vercel.app) · [Repo](https://github.com/RohanS358/refill-nutrition) |
 | <img src="https://raw.githubusercontent.com/RohanS358/bijulibatti-smart-grid/main/public/logo.svg" width="48"> | **Bijulibatti** | Marketing + admin dashboard for a smart electricity grid platform (Nepal) — live meter/transformer maps, AI dynamic pricing, IoT load control. | [Live](https://bijulibatti-smart-grid.vercel.app) · [Repo](https://github.com/RohanS358/bijulibatti-smart-grid) |
 
-### 🤖 AI & full-stack products
+## AI & full-stack products
 
 | Preview | Project | Description | Link |
 |---|---|---|---|
@@ -52,7 +52,7 @@
 | <img src="https://raw.githubusercontent.com/RohanS358/leafnode-carbon-tracker/main/logo.png" width="60"> | **LeafNode** | Earlier iteration of the school carbon-tracker concept — virtual pets, eco challenges, sustainability dashboards. | [Repo](https://github.com/RohanS358/leafnode-carbon-tracker) |
 | <img src="./public/blockchain-finance-logo.svg" width="48"> | **Blockchain Finance Mapping** | Animated landing page pitching a DeFi platform — portfolio analytics, multi-chain wallet, and global crypto-adoption mapping. | [Live](https://blockchain-finance-mapping.vercel.app) · [Repo](https://github.com/RohanS358/blockchain-finance-mapping) |
 
-### 🏆 hackathons & experiments
+## hackathons & experiments
 
 | Preview | Project | Description | Link |
 |---|---|---|---|
@@ -69,7 +69,7 @@
 
 <p align="center">
   <a href="https://rohans358.github.io/RohanS358/">
-  <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — an endless runner" width="100%">
+  <img src="https://rohans358.github.io/RohanS358/preview.png" alt="RUN — an endless runner" width="100%">
   </a>
 </p>
 
