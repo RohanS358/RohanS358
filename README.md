@@ -25,10 +25,9 @@
 ---
 
 
+> # All Projects
 
-## 💻 all projects
-
-### 🚀 client & freelance work
+## Client & freelance work
 
 | Preview | Project | Description | Link |
 |---|---|---|---|
@@ -59,38 +58,16 @@
 
 ---
 
-## 🎮 the game
+># Wanna try mino(not a chrome dino)?
 
-I wanted a game on my profile. GitHub strips `<script>` from READMEs, so the real
-one lives on Pages — full screen, and it does not go easy on you.
 
 <p align="center">
+  <a href="https://rohans358.github.io/RohanS358/">
   <img src="https://rohans358.github.io/RohanS358/preview.svg" alt="RUN — an endless runner" width="100%">
+  </a>
 </p>
 
-<p align="center">
-  <b><a href="https://rohans358.github.io/RohanS358/">▶ play it here</a></b>
-</p>
 
-<p align="center">
-  <sub>
-  <kbd>space</kbd> jump · <kbd>space</kbd> again mid-air to <b>double jump</b><br>
-  <kbd>shift</kbd> to <b>dash</b> — you're invincible through it, so dash the things you can't jump<br>
-  <kbd>↓</kbd> to duck · on mobile: tap to jump, flick right to dash, hold low to duck
-  </sub>
-</p>
-
-<p align="center">
-  <sub>hop the platforms, clear the cacti, duck the birds — and watch the sky,
-  because <b>bombers</b> show up once you're fast enough and they drop live ordnance.<br>
-  every <b>1,000 points</b> adds a storey to the skyline — and they come as staircases,
-  so you climb them step by step rather than leaping the impossible.<br>
-  your top 5 runs are kept as a local leaderboard, right there on the death screen.</sub>
-</p>
-
-<sub>~350 lines of canvas, one file, no dependencies. coyote time, jump buffering, variable
-jump height, one-way platforms and i-frames on the dash — the things that make a jump feel
-good instead of merely correct. <a href="docs/index.html">read it</a>.</sub>
 
 ---
 
