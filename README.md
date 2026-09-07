@@ -31,7 +31,6 @@
 <img src="./public/projects-carousel.gif" alt="Live previews of shipped projects" width="100%" />
 </p>
 
-<p align="center"><sub>landing pages of the live projects below, on loop</sub></p>
 
 ## Client & freelance work
 
