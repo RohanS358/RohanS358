@@ -27,6 +27,12 @@
 
 > # All Projects
 
+<p align="center">
+<img src="./public/projects-carousel.gif" alt="Live previews of shipped projects" width="100%" />
+</p>
+
+<p align="center"><sub>landing pages of the live projects below, on loop</sub></p>
+
 ## Client & freelance work
 
 | Preview | Project | Description | Link |
@@ -39,12 +45,12 @@
 
 | Preview | Project | Description | Link |
 |---|---|---|---|
-| <img src="https://raw.githubusercontent.com/RohanS358/simblip/master/public/logo.png" width="48"> | **Simblip** | An engineering notebook that simulates — draw a shape, give it physics or circuit behavior, press play. Matter.js rigid bodies, an MNA circuit solver, live graphs, AI assistant. My largest active project (470+ commits). | [Live](https://simblip.vercel.app) · [Repo](https://github.com/RohanS358/simblip) |
+| <img src="./public/simblip-logo.png" width="48"> | **Simblip** | An engineering notebook that simulates — draw a shape, give it physics or circuit behavior, press play. Matter.js rigid bodies, an MNA circuit solver, live graphs, AI assistant. My largest active project (470+ commits). | [Live](https://simblip.vercel.app) · [Repo](https://github.com/RohanS358/simblip) |
 | <img src="https://raw.githubusercontent.com/RohanS358/rover-ai-website-builder/main/public/logo.svg" width="48"> | **Rover** | AI-assisted website builder for local businesses — Gemini-powered form assistant walks owners through onboarding and generates a live site + dashboard. | [Live](https://rover-theta.vercel.app) · [Repo](https://github.com/RohanS358/rover-ai-website-builder) |
 | <img src="https://raw.githubusercontent.com/RohanS358/copaila-carbon-frontend/main/public/logo.png" width="60"> | **CoPaila (frontend)** | Frontend for a school carbon-audit platform — Scope 1/2/3 tracking, gamified student pets/XP, bilingual EN/NE. | [Live](https://copaila-carbon-frontend.vercel.app) · [Repo](https://github.com/RohanS358/copaila-carbon-frontend) |
 | <img src="https://raw.githubusercontent.com/RohanS358/copaila-carbon-backend/main/docs/logo.png" width="60"> | **CoPaila (backend)** | NestJS + Prisma API behind CoPaila — carbon calculation engine, OMR paper-form scanning, JWT auth, gamification endpoints. | [Repo](https://github.com/RohanS358/copaila-carbon-backend) |
 | <img src="https://raw.githubusercontent.com/RohanS358/leafnode-carbon-tracker/main/logo.png" width="60"> | **LeafNode** | Earlier iteration of the school carbon-tracker concept — virtual pets, eco challenges, sustainability dashboards. | [Repo](https://github.com/RohanS358/leafnode-carbon-tracker) |
-| <img src="https://raw.githubusercontent.com/RohanS358/blockchain-finance-mapping/main/public/logo.svg" width="48"> | **Blockchain Finance Mapping** | Animated landing page pitching a DeFi platform — portfolio analytics, multi-chain wallet, and global crypto-adoption mapping. | [Live](https://blockchain-finance-mapping.vercel.app) · [Repo](https://github.com/RohanS358/blockchain-finance-mapping) |
+| <img src="./public/blockchain-finance-logo.svg" width="48"> | **Blockchain Finance Mapping** | Animated landing page pitching a DeFi platform — portfolio analytics, multi-chain wallet, and global crypto-adoption mapping. | [Live](https://blockchain-finance-mapping.vercel.app) · [Repo](https://github.com/RohanS358/blockchain-finance-mapping) |
 
 ### 🏆 hackathons & experiments
 
