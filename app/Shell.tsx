@@ -35,28 +35,73 @@ const TONE: Record<string, string> = {
   hackforbusiness: "#e8402f",
 };
 
-/** Colours light enough to need dark type. */
-const LIGHT = new Set(["copaila", "fraud"]);
-const inkOn = (slug: string | null) =>
-  slug && LIGHT.has(slug) ? "#0a0a0a" : "#ffffff";
+/**
+ * Type colour is computed, not hand-listed. A hand-maintained "light
+ * colours" set had six of eleven tones wrong, which put white text on
+ * mid-tone backgrounds below WCAG AA. This measures the real contrast
+ * and picks whichever of ink/paper wins.
+ */
+const REL_LUM = (hex: string) => {
+  const ch = hex.replace("#", "").match(/../g)!.map((h) => {
+    const v = parseInt(h, 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+};
+
+const contrast = (a: string, b: string) => {
+  const [l1, l2] = [REL_LUM(a), REL_LUM(b)];
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+};
+
+const PAPER = "#ffffff";
+const INK = "#0a0a0a";
+
+const inkOn = (slug: string | null) => {
+  const bg = slug ? TONE[slug] : PAPER;
+  if (!bg) return INK;
+  return contrast(bg, PAPER) >= contrast(bg, INK) ? PAPER : INK;
+};
 
 /**
  * The mosaic. Column/row spans on a 12x6 grid, so the shapes are
  * different sizes on offset rows rather than equal bars.
  * Order matches ORDER (reverse-chronological).
  */
+/**
+ * The collage. A 12x6 grid packed with NO holes, so the shapes touch and
+ * read as one composition rather than scattered tiles. Verified by
+ * app/collage.test.mjs — every one of the 72 cells is covered exactly once.
+ */
+/**
+ * The collage. A 12x6 grid packed with NO holes and no zero-area cells,
+ * so the shapes touch and read as one composition. Verified by
+ * app/collage.test.mjs: all 72 cells covered exactly once.
+ */
 const CELLS = [
-  "col-start-1 col-span-3 row-start-1 row-span-3",
-  "col-start-4 col-span-2 row-start-1 row-span-2",
-  "col-start-6 col-span-4 row-start-1 row-span-4",
-  "col-start-10 col-span-3 row-start-1 row-span-2",
-  "col-start-4 col-span-2 row-start-3 row-span-2",
-  "col-start-10 col-span-2 row-start-3 row-span-2",
-  "col-start-12 col-span-1 row-start-3 row-span-1",
-  "col-start-1 col-span-2 row-start-4 row-span-3",
-  "col-start-3 col-span-3 row-start-5 row-span-2",
-  "col-start-6 col-span-4 row-start-5 row-span-2",
+  "col-start-1 col-span-4 row-start-1 row-span-4",   // simblip, anchor
+  "col-start-5 col-span-3 row-start-1 row-span-2",
+  "col-start-8 col-span-5 row-start-1 row-span-3",
+  "col-start-5 col-span-3 row-start-3 row-span-2",
+  "col-start-8 col-span-2 row-start-4 row-span-1",
+  "col-start-10 col-span-3 row-start-4 row-span-1",
+  "col-start-1 col-span-2 row-start-5 row-span-2",
+  "col-start-3 col-span-2 row-start-5 row-span-2",
+  "col-start-5 col-span-3 row-start-5 row-span-2",
+  "col-start-8 col-span-2 row-start-5 row-span-2",
   "col-start-10 col-span-3 row-start-5 row-span-2",
+];
+
+/**
+ * The shape cycle. Every block shares a form index, so the whole mosaic
+ * changes together — squares become rounded, then pills, then circles.
+ * Per-block offsets (i % length) keep it from looking like one switch.
+ */
+const FORMS: string[][] = [
+  ["0.125rem", "0.125rem", "0.125rem", "0.125rem"],
+  ["2rem", "1.25rem", "2.5rem", "1.5rem"],
+  ["50%", "2rem", "50%", "2.5rem"],
+  ["4rem", "50%", "1rem", "50%"],
 ];
 
 function parseHash(): string | null {
@@ -73,6 +118,7 @@ export default function Shell() {
   const [slug, setSlug] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const [form, setForm] = useState(1);
 
   useEffect(() => {
     const sync = () => setSlug(parseHash());
@@ -84,6 +130,18 @@ export default function Shell() {
       window.removeEventListener("hashchange", sync);
     };
   }, []);
+
+  // Cycle the shapes on a slow loop. Paused when a project is open, and
+  // never started at all under prefers-reduced-motion.
+  useEffect(() => {
+    if (slug) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const t = setInterval(
+      () => setForm((f) => (f + 1) % FORMS.length),
+      2600,
+    );
+    return () => clearInterval(t);
+  }, [slug]);
 
   const open = useCallback((s: string) => {
     window.location.hash = `/p/${s}`;
@@ -129,7 +187,7 @@ export default function Shell() {
     >
       {/* ---------- HOME: the mosaic ---------- */}
       <div
-        className="absolute inset-0 grid grid-cols-12 grid-rows-6 gap-2 p-4 sm:gap-3 sm:p-6"
+        className="absolute inset-0 grid place-items-center p-4 sm:p-6"
         style={{
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
@@ -137,6 +195,10 @@ export default function Shell() {
         }}
         aria-hidden={Boolean(active)}
       >
+        {/* The collage: one composition, shapes touching, centred and
+            occupying roughly half the screen rather than bleeding to
+            the edges. */}
+        <div className="grid h-[60svh] w-[min(56rem,86vw)] grid-cols-12 grid-rows-6">
         {ORDER.map((p, i) => {
           const dim = hover !== null && hover !== p.slug;
           return (
@@ -152,18 +214,21 @@ export default function Shell() {
               className={`${CELLS[i]} m`}
               style={{
                 background: TONE[p.slug],
-                borderRadius: hover === p.slug ? "2.5rem" : "0.5rem",
+                // The one idea: the same blocks keep changing shape.
+                // FORMS cycles square -> rounded -> pill -> circle.
+                borderRadius: FORMS[form][i % FORMS[form].length],
                 transform: ready
                   ? hover === p.slug
-                    ? "scale(1.015)"
+                    ? "scale(1.03)"
                     : "none"
                   : "translateY(18px)",
-                opacity: ready ? (dim ? 0.35 : 1) : 0,
+                opacity: ready ? (dim ? 0.3 : 1) : 0,
                 transitionDelay: ready ? "0ms" : `${i * 40}ms`,
               }}
             />
           );
         })}
+        </div>
       </div>
 
       {/* ---------- HOME chrome: name + caption ---------- */}
@@ -347,20 +412,20 @@ function ProjectView({
               <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
                 Year
               </dt>
-              <dd className="t-small">{p.year}</dd>
+              <dd className="t-small" style={{ color: fg }}>{p.year}</dd>
             </div>
             <div>
               <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
                 Role
               </dt>
-              <dd className="t-small">{p.role}</dd>
+              <dd className="t-small" style={{ color: fg }}>{p.role}</dd>
             </div>
             {p.commits ? (
               <div>
                 <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
                   Commits
                 </dt>
-                <dd className="t-small tabular-nums">
+                <dd className="t-small tabular-nums" style={{ color: fg }}>
                   {p.commits.toLocaleString()}
                 </dd>
               </div>

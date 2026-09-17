@@ -24,7 +24,7 @@
   --color-accent: #2b57ff;
 
   --font-sans: var(--font-sans-ui);
-  --font-mono: var(--font-mono-ui);
+  --font-serif: var(--font-serif-ui);
 }
 
 :root {
@@ -81,12 +81,16 @@ body {
 }
 
 .t-small {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 700;
   font-size: 0.8125rem;
   line-height: 1.5;
   color: var(--color-ink-2);
 }
 
 .t-label {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 700;
   font-size: 0.75rem;
   line-height: 1.4;
   color: var(--color-ink-3);
