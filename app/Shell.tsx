@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { PROFILE, PROJECTS, type Project } from "./content";
+import { pack, radii, COLS, ROWS } from "./pack";
 
 /* ============================================================
    Two states, one screen, no document scrolling — ever.
@@ -68,41 +69,7 @@ const inkOn = (slug: string | null) => {
  * different sizes on offset rows rather than equal bars.
  * Order matches ORDER (reverse-chronological).
  */
-/**
- * The collage. A 12x6 grid packed with NO holes, so the shapes touch and
- * read as one composition rather than scattered tiles. Verified by
- * app/collage.test.mjs — every one of the 72 cells is covered exactly once.
- */
-/**
- * The collage. A 12x6 grid packed with NO holes and no zero-area cells,
- * so the shapes touch and read as one composition. Verified by
- * app/collage.test.mjs: all 72 cells covered exactly once.
- */
-const CELLS = [
-  "col-start-1 col-span-4 row-start-1 row-span-4",   // simblip, anchor
-  "col-start-5 col-span-3 row-start-1 row-span-2",
-  "col-start-8 col-span-5 row-start-1 row-span-3",
-  "col-start-5 col-span-3 row-start-3 row-span-2",
-  "col-start-8 col-span-2 row-start-4 row-span-1",
-  "col-start-10 col-span-3 row-start-4 row-span-1",
-  "col-start-1 col-span-2 row-start-5 row-span-2",
-  "col-start-3 col-span-2 row-start-5 row-span-2",
-  "col-start-5 col-span-3 row-start-5 row-span-2",
-  "col-start-8 col-span-2 row-start-5 row-span-2",
-  "col-start-10 col-span-3 row-start-5 row-span-2",
-];
 
-/**
- * The shape cycle. Every block shares a form index, so the whole mosaic
- * changes together — squares become rounded, then pills, then circles.
- * Per-block offsets (i % length) keep it from looking like one switch.
- */
-const FORMS: string[][] = [
-  ["0.125rem", "0.125rem", "0.125rem", "0.125rem"],
-  ["2rem", "1.25rem", "2.5rem", "1.5rem"],
-  ["50%", "2rem", "50%", "2.5rem"],
-  ["4rem", "50%", "1rem", "50%"],
-];
 
 function parseHash(): string | null {
   if (typeof window === "undefined") return null;
@@ -118,7 +85,7 @@ export default function Shell() {
   const [slug, setSlug] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [form, setForm] = useState(1);
+  const [seed, setSeed] = useState(1);
 
   useEffect(() => {
     const sync = () => setSlug(parseHash());
@@ -135,13 +102,14 @@ export default function Shell() {
   // never started at all under prefers-reduced-motion.
   useEffect(() => {
     if (slug) return;
+    // Hovering holds the collage still — you cannot aim at a shape that
+    // is sliding away from the cursor.
+    if (hover) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(
-      () => setForm((f) => (f + 1) % FORMS.length),
-      2600,
-    );
+    // Must exceed --dur-move so a move always completes.
+    const t = setInterval(() => setSeed((n) => n + 1), 2600);
     return () => clearInterval(t);
-  }, [slug]);
+  }, [slug, hover]);
 
   const open = useCallback((s: string) => {
     window.location.hash = `/p/${s}`;
@@ -174,6 +142,10 @@ export default function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [slug, close]);
 
+  // A fresh collage each tick — a gapless, disjoint packing of the grid
+  // by construction (see pack.ts, verified in pack.test.mjs).
+  const boxes = pack(ORDER.length, seed);
+
   const active = slug ? PROJECTS.find((p) => p.slug === slug) : undefined;
   const hovered = hover ? PROJECTS.find((p) => p.slug === hover) : undefined;
 
@@ -191,14 +163,16 @@ export default function Shell() {
         style={{
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
-          transition: "opacity var(--dur) var(--ease)",
+          transition: "opacity 0.5s var(--ease)",
         }}
         aria-hidden={Boolean(active)}
       >
         {/* The collage: one composition, shapes touching, centred and
             occupying roughly half the screen rather than bleeding to
             the edges. */}
-        <div className="grid h-[60svh] w-[min(56rem,86vw)] grid-cols-12 grid-rows-6">
+        <div
+          className="relative h-[60svh] w-[min(56rem,86vw)]"
+        >
         {ORDER.map((p, i) => {
           const dim = hover !== null && hover !== p.slug;
           return (
@@ -211,12 +185,28 @@ export default function Shell() {
               onBlur={() => setHover(null)}
               tabIndex={active ? -1 : 0}
               aria-label={`${p.name}, ${p.year}`}
-              className={`${CELLS[i]} m`}
+              className="absolute"
               style={{
+                // Percentage boxes rather than grid cells: left/top/size
+                // are animatable, so the move and the corner morph run
+                // together on one curve. grid-column would snap.
+                left: `${(boxes[i].c / COLS) * 100}%`,
+                top: `${(boxes[i].r / ROWS) * 100}%`,
+                width: `${(boxes[i].w / COLS) * 100}%`,
+                height: `${(boxes[i].h / ROWS) * 100}%`,
                 background: TONE[p.slug],
-                // The one idea: the same blocks keep changing shape.
-                // FORMS cycles square -> rounded -> pill -> circle.
-                borderRadius: FORMS[form][i % FORMS[form].length],
+                // Four corners, each randomised independently.
+                borderRadius: radii(seed, i),
+                // Position + shape + fade, all on the same easing.
+                transition: [
+                  "left var(--dur-move) var(--ease-move)",
+                  "top var(--dur-move) var(--ease-move)",
+                  "width var(--dur-move) var(--ease-move)",
+                  "height var(--dur-move) var(--ease-move)",
+                  "border-radius var(--dur-move) var(--ease-move)",
+                  "opacity 0.5s var(--ease)",
+                  "transform var(--dur) var(--ease)",
+                ].join(", "),
                 transform: ready
                   ? hover === p.slug
                     ? "scale(1.03)"
@@ -236,7 +226,7 @@ export default function Shell() {
         className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7"
         style={{
           opacity: active ? 0 : 1,
-          transition: "opacity var(--dur) var(--ease)",
+          transition: "opacity 0.5s var(--ease)",
         }}
       >
         <div className="flex items-start justify-between">
