@@ -38,6 +38,15 @@
   min-width: 0;
 }
 
+/* The site is one screen. Nothing scrolls at the document level —
+   panels that need it scroll internally. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 html {
   background: var(--color-paper);
   color: var(--color-ink);
@@ -46,7 +55,6 @@ html {
 
 body {
   font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, sans-serif;
-  overflow-x: clip;
 }
 
 /* ---- type scale: deliberately tiny ------------------------- */
