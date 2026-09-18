@@ -21,15 +21,18 @@ import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
 
 /* Horizontal rail tuning.
 
-   CLOSE_DISTANCE is the wheel travel that must accumulate past an end
-   before the panel closes — about six firm notches. The old code closed
-   on roughly one, which is why reaching the end of a case study
-   dismissed it unexpectedly.
+   TRIGGER_DISTANCE is the wheel travel past an end that commits the
+   close. Once crossed the arrow runs to full size by itself and the
+   panel closes when it gets there, so leaving is a flick rather than a
+   sustained shove.
 
    SCROLL_GAIN under 1 makes the rail move less than the wheel, so
    crossing a case study takes a deliberate scroll rather than one
    flick, and each notch lands as a glide rather than a jump. */
-const CLOSE_DISTANCE = 650;
+/* The push that commits a close. Short on purpose: it only has to read
+   as deliberate, because the arrow animation that follows is what
+   actually carries the reader out. */
+const TRIGGER_DISTANCE = 180;
 const OVERSCROLL_LIMIT = 180;
 const SCROLL_GAIN = 0.55;
 /* Quiet time that separates one gesture from the next. Longer than a
@@ -342,7 +345,21 @@ function ProjectView({
      at which end. Drives the arrow in the void: it is the same number
      the close threshold uses, so what the reader sees growing IS the
      thing being measured. */
-  const [pull, setPull] = useState({ dir: 0, t: 0 });
+  /* The arrows are driven from the RAF loop through refs, not from
+     `pull` state. The wheel fires roughly every 50ms while the display
+     refreshes every 16ms, so rendering straight from the event made the
+     arrow hold one size for ~20 frames and then jump — four visible
+     steps across the whole gesture. The loop eases toward the target
+     every frame instead. */
+  const chevronRefs = useRef<(SVGSVGElement | null)[]>([null, null]);
+  // The RAF loop closes the panel, and it must not re-subscribe when a
+  // new onClose identity arrives.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  const pullTarget = useRef({ dir: 0, t: 0 });
+  const pullShown = useRef(0);
 
   const targetX = useRef(0);
   const currentX = useRef(0);
@@ -373,7 +390,8 @@ function ProjectView({
       openedFor.current = p.slug;
       closingRef.current = false;
       overscroll.current = { px: 0, at: 0, armed: false };
-      setPull({ dir: 0, t: 0 });
+      pullTarget.current = { dir: 0, t: 0 };
+      pullShown.current = 0;
       // Re-measure the live tile: the collage repacks on a timer, so a
       // rect captured at click time is stale by the time we animate.
       const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
@@ -551,6 +569,35 @@ function ProjectView({
         }
       }
 
+      /* Ease the arrow toward whatever the wheel last asked for, and
+         write it as a TRANSFORM. Animating width/height would relayout
+         the SVG every frame; scale is compositor-only, so the growth
+         stays smooth even while the rail is moving. */
+      const want = pullTarget.current.t;
+      pullShown.current += (want - pullShown.current) * 0.18;
+      if (pullShown.current < 0.001 && want === 0) pullShown.current = 0;
+      const t = pullShown.current;
+
+      /* The arrow reaching full size IS the close. The wheel only
+         commits it; this plays it out, so the animation the reader
+         watches is the thing that dismisses the panel rather than a
+         countdown running invisibly beside it. */
+      if (want === 1 && t > 0.965 && !closingRef.current) {
+        closingRef.current = true;
+        onCloseRef.current();
+      }
+      chevronRefs.current.forEach((el, i) => {
+        if (!el) return;
+        const mine = pullTarget.current.dir === (i === 0 ? -1 : 1);
+        const shown = mine ? t : 0;
+        const dir = i === 0 ? -1 : 1;
+        // 2.5rem at rest out of a 26rem box, growing to full size.
+        const REST = 2.5 / 26;
+        const k = REST + shown * (1 - REST);
+        el.style.transform = `scaleX(${dir}) scale(${k.toFixed(4)})`;
+        el.style.opacity = `${(0.25 + shown * 0.75).toFixed(3)}`;
+      });
+
       rafId.current = requestAnimationFrame(loop);
     };
 
@@ -617,7 +664,7 @@ function ProjectView({
          deliberate request to leave. */
       if (pushingPast && !overscroll.current.armed) {
         overscroll.current.px = 0;
-        setPull({ dir: 0, t: 0 });
+        pullTarget.current = { dir: 0, t: 0 };
         targetX.current = Math.min(
           max + OVERSCROLL_LIMIT,
           Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
@@ -627,19 +674,28 @@ function ProjectView({
 
       if (pushingPast) {
         overscroll.current.px += Math.abs(d);
-        setPull({
-          dir: atStart ? -1 : 1,
-          t: Math.min(1, overscroll.current.px / CLOSE_DISTANCE),
-        });
+
+        /* A short push COMMITS the close; it does not have to be held.
+
+           Once past TRIGGER_DISTANCE the arrow is sent to full size and
+           the loop plays it out on its own, closing the panel when it
+           arrives. Requiring the reader to push the whole way meant
+           holding a gesture against resistance for most of a second,
+           which is a lot of work to leave a page. */
+        if (overscroll.current.px >= TRIGGER_DISTANCE) {
+          pullTarget.current = { dir: atStart ? -1 : 1, t: 1 };
+        } else {
+          pullTarget.current = {
+            dir: atStart ? -1 : 1,
+            t: (overscroll.current.px / TRIGGER_DISTANCE) * 0.45,
+          };
+        }
+
         // Rubber-band: the rail keeps giving, at a quarter rate.
         targetX.current = Math.min(
           max + OVERSCROLL_LIMIT,
           Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
         );
-        if (overscroll.current.px >= CLOSE_DISTANCE) {
-          closingRef.current = true;
-          onClose();
-        }
         return;
       }
 
@@ -647,7 +703,7 @@ function ProjectView({
       // must not leave the panel primed to close on the tail events.
       overscroll.current.px = 0;
       overscroll.current.armed = false;
-      setPull((v) => (v.t === 0 ? v : { dir: 0, t: 0 }));
+      pullTarget.current = { dir: 0, t: 0 };
       targetX.current = Math.min(max, Math.max(0, targetX.current + d * SCROLL_GAIN));
     };
 
@@ -803,7 +859,7 @@ function ProjectView({
             back into empty colour is an obvious edge, so the close that
             follows reads as leaving rather than as something breaking. */}
         <div className="grid h-full w-screen shrink-0 place-items-center" aria-hidden>
-          <Chevron dir={-1} t={pull.dir === -1 ? pull.t : 0} fg={fg} />
+          <Chevron dir={-1} fg={fg} elRef={(el) => (chevronRefs.current[0] = el)} />
         </div>
 
         {/* 1 — Giant Project Title */}
@@ -918,7 +974,7 @@ function ProjectView({
             is what tells the reader they are at the end, so the close
             that follows is a deliberate exit rather than a surprise. */}
         <div className="grid h-full w-screen shrink-0 place-items-center" aria-hidden>
-          <Chevron dir={1} t={pull.dir === 1 ? pull.t : 0} fg={fg} />
+          <Chevron dir={1} fg={fg} elRef={(el) => (chevronRefs.current[1] = el)} />
         </div>
       </div>
 
@@ -1044,11 +1100,18 @@ function rise(open: boolean, stagger: number): React.CSSProperties {
  * the same accumulated distance the handler tests, which means the
  * arrow reaching full size and the block closing are the same event.
  */
-function Chevron({ dir, t, fg }: { dir: -1 | 1; t: number; fg: string }) {
-  // Small at rest, title-sized at the threshold.
-  const size = 2.5 + t * 26;
+function Chevron({
+  dir,
+  fg,
+  elRef,
+}: {
+  dir: -1 | 1;
+  fg: string;
+  elRef: (el: SVGSVGElement | null) => void;
+}) {
   return (
     <svg
+      ref={elRef}
       viewBox="0 0 24 24"
       fill="none"
       stroke={fg}
@@ -1056,16 +1119,18 @@ function Chevron({ dir, t, fg }: { dir: -1 | 1; t: number; fg: string }) {
       strokeLinecap="round"
       strokeLinejoin="round"
       style={{
-        width: `${size}rem`,
-        height: `${size}rem`,
-        // Faint until the reader actually pushes, then confident.
-        opacity: 0.25 + t * 0.75,
+        /* Laid out at FULL size and scaled DOWN to rest, never up.
+           Scaling a small SVG up magnifies the raster the browser
+           already produced, which is what made the arrow blurry as it
+           grew; starting large means every size is a downscale of a
+           sharp original. Growth is still a transform, so no relayout. */
+        width: "26rem",
+        height: "26rem",
+        opacity: 0.25,
         // dir -1 is the leading void: flip to point left, the way the
         // reader is travelling. The base path points right.
-        transform: `scaleX(${dir})`,
-        // No transition: `t` is already continuous with the wheel, and
-        // easing it would lag the gesture it is meant to report.
-        willChange: "width, height, opacity",
+        transform: `scaleX(${dir}) scale(${(2.5 / 26).toFixed(4)})`,
+        willChange: "transform, opacity",
       }}
     >
       <path d="M9 5l7 7-7 7" />
