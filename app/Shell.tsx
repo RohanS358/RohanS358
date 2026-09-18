@@ -422,6 +422,22 @@ function ProjectView({
             anim?.cancel();
             setPhase("open");
           };
+          /* Park the rail on the title, not on the leading void.
+
+             The rail opens with a full screen of empty colour, so
+             resting at 0 would show the reader nothing with the title
+             off to the right. The void stays behind as the edge to
+             scroll back into. */
+          const railEl = railRef.current;
+          const titleEl = railEl?.children[1] as HTMLElement | undefined;
+          if (railEl && titleEl) {
+            const rest = Math.max(
+              0,
+              titleEl.offsetLeft - (window.innerWidth - titleEl.offsetWidth) / 2,
+            );
+            targetX.current = rest;
+            currentX.current = rest;
+          }
         } else {
           setPhase("open");
         }
@@ -744,6 +760,15 @@ function ProjectView({
           willChange: "transform",
         }}
       >
+        {/* 0 — Leading void.
+
+            A full screen of nothing before the title. It gives the
+            composition somewhere to breathe on arrival, and it is what
+            makes the start of the rail legible as a START: scrolling
+            back into empty colour is an obvious edge, so the close that
+            follows reads as leaving rather than as something breaking. */}
+        <div className="h-full w-screen shrink-0" aria-hidden />
+
         {/* 1 — Giant Project Title */}
         <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isOpen, 0.62)}>
           <h2
@@ -847,8 +872,15 @@ function ProjectView({
               </span>
             </div>
           )}
-
         </div>
+
+        {/* 4 — Trailing void.
+
+            The mirror of the leading one: a full screen of empty colour
+            that marks the end of the case study. Running out of content
+            is what tells the reader they are at the end, so the close
+            that follows is a deliberate exit rather than a surprise. */}
+        <div className="h-full w-screen shrink-0" aria-hidden />
       </div>
 
       {/* ---------- Header & Chrome ---------- */}
