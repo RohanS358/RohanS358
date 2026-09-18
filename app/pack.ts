@@ -122,32 +122,25 @@ export function pack(n: number, seed: number): Rect[] {
 }
 
 /**
- * Corner radii for one shape.
+ * Four independently random corner radii.
  *
- * Each corner is random, but they all share one scale: mixing a 50%
- * corner with a 2px corner on the same box reads as a mistake rather
- * than a choice. A shape picks a roundness band, then varies its four
- * corners within that band, so it stays visually balanced.
+ * Deliberately NOT banded per shape: letting a 50% corner sit next to a
+ * sharp one is what gives each shape its own tapered, lopsided
+ * character, and it is the look Rohan picked over the balanced version.
  */
 export function radii(seed: number, index: number): string {
   const rand = rng(seed * 7919 + index * 104729);
-
-  // The band this shape lives in, as a fraction of its shorter side.
-  const r = rand();
-  const band: [number, number] =
-    r < 0.2
-      ? [0.02, 0.06] // nearly square
-      : r < 0.55
-        ? [0.1, 0.22] // softened
-        : r < 0.85
-          ? [0.26, 0.4] // generous
-          : [0.45, 0.5]; // pill / round
-
-  const [lo, hi] = band;
-  // Four corners, varied but all within the same band.
-  const pick = () => `${((lo + rand() * (hi - lo)) * 100).toFixed(1)}%`;
+  const pick = () => {
+    const r = rand();
+    // A spread of forms: sharp, softened, generous, fully round.
+    if (r < 0.18) return "2px";
+    if (r < 0.5) return `${(0.75 + rand() * 1.5).toFixed(2)}rem`;
+    if (r < 0.8) return `${(2 + rand() * 2.5).toFixed(2)}rem`;
+    return "50%";
+  };
   return `${pick()} ${pick()} ${pick()} ${pick()}`;
 }
+
 
 
 
