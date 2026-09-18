@@ -26,12 +26,12 @@ import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
    on roughly one, which is why reaching the end of a case study
    dismissed it unexpectedly.
 
-   SCROLL_GAIN under 1 makes the rail move slightly less than the wheel,
-   so crossing a case study takes a deliberate scroll rather than one
-   flick. */
+   SCROLL_GAIN under 1 makes the rail move less than the wheel, so
+   crossing a case study takes a deliberate scroll rather than one
+   flick, and each notch lands as a glide rather than a jump. */
 const CLOSE_DISTANCE = 650;
 const OVERSCROLL_LIMIT = 180;
-const SCROLL_GAIN = 0.75;
+const SCROLL_GAIN = 0.55;
 /* Quiet time that separates one gesture from the next. Longer than a
    trackpad's momentum tail, so a flick and the push after it are told
    apart. */
@@ -338,6 +338,11 @@ function ProjectView({
   const [phase, setPhase] = useState<Phase>("closed");
   const [liveOrigin, setLiveOrigin] = useState<Origin | null>(from);
   const [progress, setProgress] = useState(0);
+  /* How far the current overscroll has gone toward closing, 0..1, and
+     at which end. Drives the arrow in the void: it is the same number
+     the close threshold uses, so what the reader sees growing IS the
+     thing being measured. */
+  const [pull, setPull] = useState({ dir: 0, t: 0 });
 
   const targetX = useRef(0);
   const currentX = useRef(0);
@@ -368,6 +373,7 @@ function ProjectView({
       openedFor.current = p.slug;
       closingRef.current = false;
       overscroll.current = { px: 0, at: 0, armed: false };
+      setPull({ dir: 0, t: 0 });
       // Re-measure the live tile: the collage repacks on a timer, so a
       // rect captured at click time is stale by the time we animate.
       const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
@@ -431,10 +437,24 @@ function ProjectView({
           const railEl = railRef.current;
           const titleEl = railEl?.children[1] as HTMLElement | undefined;
           if (railEl && titleEl) {
-            const rest = Math.max(
-              0,
-              titleEl.offsetLeft - (window.innerWidth - titleEl.offsetWidth) / 2,
-            );
+            /* `targetX` is measured from the start of the CONTENT, so
+               the leading void's width comes off: 0 means "title area",
+               and negative means the reader has backed into the void. */
+            /* `targetX` is measured from the start of the CONTENT: the
+               rail transform adds one viewport so that x=0 sits at the
+               content edge with the leading void off-screen to the
+               left. offsetLeft is measured from the rail edge and so
+               includes that void, hence subtracting one viewport here. */
+            /* Centre the HEADING, not its container: the wrapper
+               carries px-[6vw] padding the glyphs do not fill, so
+               centring the box leaves the word visibly off to one
+               side. */
+            const glyphs = (titleEl.querySelector("h2") ??
+              titleEl) as HTMLElement;
+            const rest =
+              titleEl.offsetLeft +
+              glyphs.offsetLeft -
+              (window.innerWidth - glyphs.offsetWidth) / 2;
             targetX.current = rest;
             currentX.current = rest;
           }
@@ -479,6 +499,12 @@ function ProjectView({
   const isOpen = phase === "open";
   const isClosing = phase === "closing";
 
+  /* The full travel range, voids included.
+
+     x = 0 shows the leading void, x = max shows the trailing one, so
+     both are ordinary scrollable space the reader can reach. Overscroll
+     — and the arrow growing — begins only once they push PAST an end,
+     which is why the voids read as a runway rather than a wall. */
   const measure = useCallback(() => {
     const el = railRef.current;
     if (!el) return 0;
@@ -498,7 +524,10 @@ function ProjectView({
       const dx = targetX.current - currentX.current;
 
       if (Math.abs(dx) > 0.05) {
-        currentX.current += dx * 0.16;
+        /* Lower factor = longer glide. 0.16 tracked the wheel almost
+           rigidly, which read as harsh; 0.085 lets the rail keep
+           coasting after the gesture stops. */
+        currentX.current += dx * 0.085;
       } else {
         currentX.current = targetX.current;
       }
@@ -588,6 +617,7 @@ function ProjectView({
          deliberate request to leave. */
       if (pushingPast && !overscroll.current.armed) {
         overscroll.current.px = 0;
+        setPull({ dir: 0, t: 0 });
         targetX.current = Math.min(
           max + OVERSCROLL_LIMIT,
           Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
@@ -597,6 +627,10 @@ function ProjectView({
 
       if (pushingPast) {
         overscroll.current.px += Math.abs(d);
+        setPull({
+          dir: atStart ? -1 : 1,
+          t: Math.min(1, overscroll.current.px / CLOSE_DISTANCE),
+        });
         // Rubber-band: the rail keeps giving, at a quarter rate.
         targetX.current = Math.min(
           max + OVERSCROLL_LIMIT,
@@ -613,6 +647,7 @@ function ProjectView({
       // must not leave the panel primed to close on the tail events.
       overscroll.current.px = 0;
       overscroll.current.armed = false;
+      setPull((v) => (v.t === 0 ? v : { dir: 0, t: 0 }));
       targetX.current = Math.min(max, Math.max(0, targetX.current + d * SCROLL_GAIN));
     };
 
@@ -767,7 +802,9 @@ function ProjectView({
             makes the start of the rail legible as a START: scrolling
             back into empty colour is an obvious edge, so the close that
             follows reads as leaving rather than as something breaking. */}
-        <div className="h-full w-screen shrink-0" aria-hidden />
+        <div className="grid h-full w-screen shrink-0 place-items-center" aria-hidden>
+          <Chevron dir={-1} t={pull.dir === -1 ? pull.t : 0} fg={fg} />
+        </div>
 
         {/* 1 — Giant Project Title */}
         <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isOpen, 0.62)}>
@@ -880,7 +917,9 @@ function ProjectView({
             that marks the end of the case study. Running out of content
             is what tells the reader they are at the end, so the close
             that follows is a deliberate exit rather than a surprise. */}
-        <div className="h-full w-screen shrink-0" aria-hidden />
+        <div className="grid h-full w-screen shrink-0 place-items-center" aria-hidden>
+          <Chevron dir={1} t={pull.dir === 1 ? pull.t : 0} fg={fg} />
+        </div>
       </div>
 
       {/* ---------- Header & Chrome ---------- */}
@@ -936,12 +975,8 @@ function ProjectView({
           </button>
         </div>
 
-        {/* Bottom Hint */}
-        <div className="pointer-events-none self-start rounded-full bg-current/10 px-3.5 py-1.5 backdrop-blur-md">
-          <p className="t-label text-xs opacity-60" style={{ color: fg }}>
-            scroll sideways to explore — keep scrolling past either end to close
-          </p>
-        </div>
+      
+        
       </div>
     </section>
   );
@@ -997,4 +1032,43 @@ function rise(open: boolean, stagger: number): React.CSSProperties {
       ? `opacity ${dur} var(--ease) ${delay}, transform ${dur} var(--ease) ${delay}`
       : "opacity calc(var(--dur-panel-close) * 0.2) ease-out, transform calc(var(--dur-panel-close) * 0.2) ease-out",
   };
+}
+
+/**
+ * The arrow that lives in a void at the end of the rail.
+ *
+ * At rest it is a small chevron — just enough to say "there is an edge
+ * here". As the reader pushes past the end it grows toward the size of
+ * the project title, and at full size the panel closes. So the growth
+ * is not decoration: it is the close threshold made visible, drawn from
+ * the same accumulated distance the handler tests, which means the
+ * arrow reaching full size and the block closing are the same event.
+ */
+function Chevron({ dir, t, fg }: { dir: -1 | 1; t: number; fg: string }) {
+  // Small at rest, title-sized at the threshold.
+  const size = 2.5 + t * 26;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke={fg}
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{
+        width: `${size}rem`,
+        height: `${size}rem`,
+        // Faint until the reader actually pushes, then confident.
+        opacity: 0.25 + t * 0.75,
+        // dir -1 is the leading void: flip to point left, the way the
+        // reader is travelling. The base path points right.
+        transform: `scaleX(${dir})`,
+        // No transition: `t` is already continuous with the wheel, and
+        // easing it would lag the gesture it is meant to report.
+        willChange: "width, height, opacity",
+      }}
+    >
+      <path d="M9 5l7 7-7 7" />
+    </svg>
+  );
 }
