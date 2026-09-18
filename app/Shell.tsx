@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { PROFILE, PROJECTS, type Project } from "./content";
-import { pack, radii, COLS, ROWS } from "./pack";
+import { pack, shapePath, COLS, ROWS } from "./pack";
 
 /* ============================================================
    Two states, one screen, no document scrolling — ever.
@@ -86,6 +86,10 @@ export default function Shell() {
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [seed, setSeed] = useState(1);
+  // Wheel travel, wrapped to 0..1, driving the shape geometry. The
+  // document still never scrolls — the wheel is captured and spent on
+  // deformation instead.
+  const [morph, setMorph] = useState(0);
 
   useEffect(() => {
     const sync = () => setSlug(parseHash());
@@ -110,6 +114,47 @@ export default function Shell() {
     const t = setInterval(() => setSeed((n) => n + 1), 2600);
     return () => clearInterval(t);
   }, [slug, hover]);
+
+  // Wheel and touch drive the morph, but only on HOME — a project view
+  // captures the wheel for its own horizontal rail, and two handlers
+  // fighting over one gesture is how scroll-jacking gets ugly.
+  useEffect(() => {
+    if (slug) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    const advance = (d: number) => {
+      setMorph((v) => {
+        // One ordinary wheel notch (~100px) should visibly bend the
+        // shapes; a full cycle lands in roughly four flicks.
+        const next = v + d * 0.0025;
+        return next - Math.floor(next); // wrap, so it never dead-ends
+      });
+    };
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      advance(Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY);
+    };
+
+    let last = 0;
+    const onTouchStart = (e: TouchEvent) => {
+      last = e.touches[0].clientY;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const y = e.touches[0].clientY;
+      advance(last - y);
+      last = y;
+    };
+
+    window.addEventListener("wheel", onWheel, { passive: false });
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", onWheel);
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+    };
+  }, [slug]);
 
   const open = useCallback((s: string) => {
     window.location.hash = `/p/${s}`;
@@ -175,6 +220,7 @@ export default function Shell() {
         >
         {ORDER.map((p, i) => {
           const dim = hover !== null && hover !== p.slug;
+          const clip = shapePath(seed, i, morph);
           return (
             <button
               key={p.slug}
@@ -195,15 +241,20 @@ export default function Shell() {
                 width: `${(boxes[i].w / COLS) * 100}%`,
                 height: `${(boxes[i].h / ROWS) * 100}%`,
                 background: TONE[p.slug],
-                // Four corners, each randomised independently.
-                borderRadius: radii(seed, i),
-                // Position + shape + fade, all on the same easing.
+                // The silhouette: a slant, arch, chamfer, capsule or
+                // notch, deformed live by scroll. clip-path replaces
+                // border-radius — under a polygon, a radius is a no-op.
+                clipPath: clip,
+                WebkitClipPath: clip,
+                // Position + shape + fade, all on the same easing. The
+                // clip-path tweens only because a shape keeps its
+                // family (see shapePath) — mixed families would snap.
                 transition: [
                   "left var(--dur-move) var(--ease-move)",
                   "top var(--dur-move) var(--ease-move)",
                   "width var(--dur-move) var(--ease-move)",
                   "height var(--dur-move) var(--ease-move)",
-                  "border-radius var(--dur-move) var(--ease-move)",
+                  "clip-path 0.18s linear",
                   "opacity 0.5s var(--ease)",
                   "transform var(--dur) var(--ease)",
                 ].join(", "),
@@ -256,7 +307,10 @@ export default function Shell() {
                 </span>
               </>
             ) : (
-              <span className="text-ink-3">{PROFILE.shortBio}</span>
+              <span className="text-ink-3">
+                {PROFILE.shortBio}
+                <span className="hidden sm:inline"> — scroll to bend the shapes</span>
+              </span>
             )}
           </p>
         </div>
