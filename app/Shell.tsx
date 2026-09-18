@@ -21,24 +21,11 @@ import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
 
 /* Horizontal rail tuning.
 
-   TRIGGER_DISTANCE is the wheel travel past an end that commits the
-   close. Once crossed the arrow runs to full size by itself and the
-   panel closes when it gets there, so leaving is a flick rather than a
-   sustained shove.
-
    SCROLL_GAIN under 1 makes the rail move less than the wheel, so
    crossing a case study takes a deliberate scroll rather than one
    flick, and each notch lands as a glide rather than a jump. */
-/* The push that commits a close. Short on purpose: it only has to read
-   as deliberate, because the arrow animation that follows is what
-   actually carries the reader out. */
-const TRIGGER_DISTANCE = 180;
 const OVERSCROLL_LIMIT = 180;
 const SCROLL_GAIN = 0.55;
-/* Quiet time that separates one gesture from the next. Longer than a
-   trackpad's momentum tail, so a flick and the push after it are told
-   apart. */
-const GESTURE_GAP = 220;
 
 const ORDER = [...PROJECTS].sort((a, b) => b.year - a.year);
 
@@ -103,7 +90,6 @@ export default function Shell() {
   const [orient, setOrient] = useState<Orientation>("landscape");
   const [from, setFrom] = useState<Origin | null>(null);
 
-
   useEffect(() => {
     const mq = window.matchMedia("(max-aspect-ratio: 1/1)");
     const sync = () => setOrient(mq.matches ? "portrait" : "landscape");
@@ -164,7 +150,6 @@ export default function Shell() {
   const close = useCallback(() => {
     window.location.hash = "";
   }, []);
-
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -358,8 +343,6 @@ function ProjectView({
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
-  const pullTarget = useRef({ dir: 0, t: 0 });
-  const pullShown = useRef(0);
 
   const targetX = useRef(0);
   const currentX = useRef(0);
@@ -377,7 +360,6 @@ function ProjectView({
      Deliberately large: a flick to the end of the rail is ~1-2 notches
      of overscroll, and closing on that made the panel feel like it shut
      itself. This is roughly six firm notches. */
-  const overscroll = useRef({ px: 0, at: 0, armed: false });
   const closingRef = useRef(false);
 
   const isDragging = useRef(false);
@@ -389,9 +371,6 @@ function ProjectView({
       if (openedFor.current === p.slug) return;
       openedFor.current = p.slug;
       closingRef.current = false;
-      overscroll.current = { px: 0, at: 0, armed: false };
-      pullTarget.current = { dir: 0, t: 0 };
-      pullShown.current = 0;
       // Re-measure the live tile: the collage repacks on a timer, so a
       // rect captured at click time is stale by the time we animate.
       const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
@@ -569,32 +548,50 @@ function ProjectView({
         }
       }
 
-      /* Ease the arrow toward whatever the wheel last asked for, and
-         write it as a TRANSFORM. Animating width/height would relayout
-         the SVG every frame; scale is compositor-only, so the growth
-         stays smooth even while the rail is moving. */
-      const want = pullTarget.current.t;
-      pullShown.current += (want - pullShown.current) * 0.18;
-      if (pullShown.current < 0.001 && want === 0) pullShown.current = 0;
-      const t = pullShown.current;
+      /* The arrow tracks the scroll, frame by frame.
 
-      /* The arrow reaching full size IS the close. The wheel only
-         commits it; this plays it out, so the animation the reader
-         watches is the thing that dismisses the panel rather than a
-         countdown running invisibly beside it. */
-      if (want === 1 && t > 0.965 && !closingRef.current) {
+         The voids at the ends of the rail are the runway: travelling
+         into one grows the arrow in lockstep with how far through it
+         the reader is, so the gesture and the growth are one motion
+         rather than two things that happen near each other. Entering
+         the void is nothing; its far edge is full size.
+
+         Position runs through --ease-panel, so the growth carries the
+         same curve as the panel expansion, and the rail's own lerp
+         smooths it — `currentX` moves every frame even while the wheel
+         is between events.
+
+         Written as a TRANSFORM: animating width/height would relayout
+         the SVG on every frame. */
+      const vw = window.innerWidth;
+      const x = currentX.current;
+      let dir: -1 | 0 | 1 = 0;
+      let through = 0;
+      if (x < vw) {
+        dir = -1;
+        through = Math.min(1, (vw - x) / vw);
+      } else if (x > max - vw) {
+        dir = 1;
+        through = Math.min(1, (x - (max - vw)) / vw);
+      }
+      const t = through > 0 ? easePanel(through) : 0;
+
+      /* Crossing the void closes the panel. `through` reaches 1 at its
+         far edge, so the arrow is already at full size — the close
+         lands as the end of a motion rather than a cutoff. */
+      if (through >= 1 && !closingRef.current) {
         closingRef.current = true;
         onCloseRef.current();
       }
+
       chevronRefs.current.forEach((el, i) => {
         if (!el) return;
-        const mine = pullTarget.current.dir === (i === 0 ? -1 : 1);
-        const shown = mine ? t : 0;
-        const dir = i === 0 ? -1 : 1;
+        const mySide = i === 0 ? -1 : 1;
+        const shown = dir === mySide ? t : 0;
         // 2.5rem at rest out of a 26rem box, growing to full size.
         const REST = 2.5 / 26;
         const k = REST + shown * (1 - REST);
-        el.style.transform = `scaleX(${dir}) scale(${k.toFixed(4)})`;
+        el.style.transform = `scaleX(${mySide}) scale(${k.toFixed(4)})`;
         el.style.opacity = `${(0.25 + shown * 0.75).toFixed(3)}`;
       });
 
@@ -633,78 +630,17 @@ function ProjectView({
       if (closingRef.current) return;
 
       const max = maxScroll.current;
-      const now = performance.now();
-      /* One continuous gesture cannot both cross the rail and close it.
 
-         `armed` is the timestamp at which the rail first reached an end
-         during THIS gesture. Overscroll only starts counting once the
-         wheel has been quiet for a moment after that — so a single fast
-         flick to the end stops there, and closing takes a second,
-         separate push. A gap also resets the accumulator, so slow nudges
-         never add up. */
-      const gap = now - overscroll.current.at;
-      if (gap > GESTURE_GAP) {
-        overscroll.current.px = 0;
-        overscroll.current.armed = true;
-      }
-      overscroll.current.at = now;
+      /* Plain scrolling: the voids carry the close now.
 
-      const atStart = targetX.current <= 0;
-      const atEnd = targetX.current >= max;
-      const pushingPast = (atStart && d < 0) || (atEnd && d > 0);
-
-      /* Arriving at an end does not start the count.
-
-         A single fast flick across the whole rail ends with the target
-         pinned at the edge while momentum events keep coming, and those
-         would otherwise accumulate straight past the threshold and
-         close the panel the moment the reader reached the last card.
-         The rail has to SETTLE at the end first — the visible position
-         catches up to the target — before a further push counts as a
-         deliberate request to leave. */
-      if (pushingPast && !overscroll.current.armed) {
-        overscroll.current.px = 0;
-        pullTarget.current = { dir: 0, t: 0 };
-        targetX.current = Math.min(
-          max + OVERSCROLL_LIMIT,
-          Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
-        );
-        return;
-      }
-
-      if (pushingPast) {
-        overscroll.current.px += Math.abs(d);
-
-        /* A short push COMMITS the close; it does not have to be held.
-
-           Once past TRIGGER_DISTANCE the arrow is sent to full size and
-           the loop plays it out on its own, closing the panel when it
-           arrives. Requiring the reader to push the whole way meant
-           holding a gesture against resistance for most of a second,
-           which is a lot of work to leave a page. */
-        if (overscroll.current.px >= TRIGGER_DISTANCE) {
-          pullTarget.current = { dir: atStart ? -1 : 1, t: 1 };
-        } else {
-          pullTarget.current = {
-            dir: atStart ? -1 : 1,
-            t: (overscroll.current.px / TRIGGER_DISTANCE) * 0.45,
-          };
-        }
-
-        // Rubber-band: the rail keeps giving, at a quarter rate.
-        targetX.current = Math.min(
-          max + OVERSCROLL_LIMIT,
-          Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
-        );
-        return;
-      }
-
-      // Scrolling within the rail disarms: reaching an end mid-flick
-      // must not leave the panel primed to close on the tail events.
-      overscroll.current.px = 0;
-      overscroll.current.armed = false;
-      pullTarget.current = { dir: 0, t: 0 };
-      targetX.current = Math.min(max, Math.max(0, targetX.current + d * SCROLL_GAIN));
+         There is no accumulator here any more. Travelling into a void
+         grows the arrow (see the RAF loop) and crossing it closes the
+         panel, so the wheel only has to move the rail. The range runs
+         one viewport past each end so a void can be entered fully. */
+      targetX.current = Math.min(
+        max + window.innerWidth,
+        Math.max(-window.innerWidth, targetX.current + d * SCROLL_GAIN),
+      );
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -1051,6 +987,47 @@ function ProjectView({
  * should be gone before the panel starts shrinking, or it rides the
  * retraction down and smears.
  */
+/**
+ * Evaluate --ease-panel at progress `x`.
+ *
+ * Control points are parsed from the CSS token rather than repeated
+ * here, so the arrow and the panel expansion cannot drift onto
+ * different curves.
+ *
+ * CSS solves y for a given x on a parametric cubic; this does the same
+ * with a short bisection. Ten iterations lands within ~1e-3 of the
+ * browser's own result, checked against WAAPI — far finer than a
+ * subpixel at any size the arrow reaches.
+ */
+let easeCache: [number, number, number, number] | null = null;
+
+function easePanel(x: number): number {
+  if (x <= 0) return 0;
+  if (x >= 1) return 1;
+  if (!easeCache) {
+    const m = cssValue("--ease-panel").match(/-?[\d.]+/g);
+    easeCache =
+      m && m.length === 4
+        ? ([+m[0], +m[1], +m[2], +m[3]] as [number, number, number, number])
+        : [0.4, 0, 0.2, 1];
+  }
+  const [p0, p1, p2, p3] = easeCache;
+  const cx = (u: number) =>
+    3 * (1 - u) * (1 - u) * u * p0 + 3 * (1 - u) * u * u * p2 + u * u * u;
+  const cy = (u: number) =>
+    3 * (1 - u) * (1 - u) * u * p1 + 3 * (1 - u) * u * u * p3 + u * u * u;
+
+  let lo = 0;
+  let hi = 1;
+  let u = x;
+  for (let i = 0; i < 10; i++) {
+    if (cx(u) - x > 0) hi = u;
+    else lo = u;
+    u = (lo + hi) / 2;
+  }
+  return cy(u);
+}
+
 /** Read a CSS custom property off :root. */
 function cssValue(name: string): string {
   if (typeof window === "undefined") return "";
