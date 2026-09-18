@@ -469,7 +469,7 @@ function ProjectView({
         }}
       >
         {/* 1 — the name, enormous, bleeding past the edges */}
-        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(open, 0.5)}>
+        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(open, 0.66)}>
           <h2
             className="whitespace-nowrap font-semibold leading-[0.8] tracking-tighter"
             style={{ fontSize: "min(42vh, 22vw)" }}
@@ -481,7 +481,7 @@ function ProjectView({
         {/* 2 — what it is */}
         <div
           className="flex h-full w-[min(88vw,30rem)] shrink-0 flex-col justify-center gap-5 px-[4vw]"
-          style={rise(open, 0.58)}
+          style={rise(open, 0.74)}
         >
           <p className="t-body" style={{ opacity: 0.92 }}>
             {p.line}
@@ -542,7 +542,7 @@ function ProjectView({
         </div>
 
         {/* 3 — the work itself */}
-        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(open, 0.66)}>
+        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(open, 0.82)}>
           {p.shot ? (
             <div className="relative h-[62vh] w-[min(80vw,34rem)] shrink-0 overflow-hidden rounded-xl bg-white/10">
               <Image
