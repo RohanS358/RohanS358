@@ -19,6 +19,24 @@ import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
    a harmonized, premium feeling across all interactions.
    ============================================================ */
 
+/* Horizontal rail tuning.
+
+   CLOSE_DISTANCE is the wheel travel that must accumulate past an end
+   before the panel closes — about six firm notches. The old code closed
+   on roughly one, which is why reaching the end of a case study
+   dismissed it unexpectedly.
+
+   SCROLL_GAIN under 1 makes the rail move slightly less than the wheel,
+   so crossing a case study takes a deliberate scroll rather than one
+   flick. */
+const CLOSE_DISTANCE = 650;
+const OVERSCROLL_LIMIT = 180;
+const SCROLL_GAIN = 0.75;
+/* Quiet time that separates one gesture from the next. Longer than a
+   trackpad's momentum tail, so a flick and the push after it are told
+   apart. */
+const GESTURE_GAP = 220;
+
 const ORDER = [...PROJECTS].sort((a, b) => b.year - a.year);
 
 const TONE: Record<string, string> = {
@@ -144,24 +162,6 @@ export default function Shell() {
     window.location.hash = "";
   }, []);
 
-  const step = useCallback(
-    (dir: 1 | -1) => {
-      if (!slug) return;
-      const i = ORDER.findIndex((p) => p.slug === slug);
-      if (i < 0) return;
-      const n = (i + dir + ORDER.length) % ORDER.length;
-      const targetSlug = ORDER[n].slug;
-
-      const targetEl = document.querySelector(`[data-tile="${targetSlug}"]`) as HTMLElement;
-      if (targetEl) {
-        setFrom({ rect: targetEl.getBoundingClientRect(), radius: getComputedStyle(targetEl).borderRadius });
-      }
-
-      window.history.replaceState(null, "", `#/p/${targetSlug}`);
-      setSlug(targetSlug);
-    },
-    [slug],
-  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -303,7 +303,6 @@ export default function Shell() {
           fg={inkOn(p.slug)}
           from={from}
           onClose={close}
-          onStep={step}
           projectIndex={idx}
           totalProjects={ORDER.length}
         />
@@ -325,7 +324,6 @@ function ProjectView({
   fg,
   from,
   onClose,
-  onStep,
   projectIndex,
   totalProjects,
 }: {
@@ -334,7 +332,6 @@ function ProjectView({
   fg: string;
   from: Origin | null;
   onClose: () => void;
-  onStep: (d: 1 | -1) => void;
   projectIndex: number;
   totalProjects: number;
 }) {
@@ -348,12 +345,29 @@ function ProjectView({
   const railRef = useRef<HTMLDivElement>(null);
   const rafId = useRef<number | null>(null);
 
+  /* Guards the open animation to one run per activation. `setLiveOrigin`
+     below re-renders, and `from` is a dependency of that effect, so
+     without this the expansion fired twice — visibly, as a second
+     animation restarting from the tile. */
+  const openedFor = useRef<string | null>(null);
+
+  /* How far past an end the wheel must travel before the panel closes.
+     Deliberately large: a flick to the end of the rail is ~1-2 notches
+     of overscroll, and closing on that made the panel feel like it shut
+     itself. This is roughly six firm notches. */
+  const overscroll = useRef({ px: 0, at: 0, armed: false });
+  const closingRef = useRef(false);
+
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, scroll: 0, lastX: 0, velocity: 0, time: 0 });
 
   // Phase state machine for opening & closing
   useEffect(() => {
     if (active) {
+      if (openedFor.current === p.slug) return;
+      openedFor.current = p.slug;
+      closingRef.current = false;
+      overscroll.current = { px: 0, at: 0, armed: false };
       // Re-measure the live tile: the collage repacks on a timer, so a
       // rect captured at click time is stale by the time we animate.
       const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
@@ -417,6 +431,7 @@ function ProjectView({
         anim?.cancel();
       };
     } else {
+      openedFor.current = null;
       setPhase((prev) => {
         if (prev === "open" || prev === "opening") {
           const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
@@ -506,21 +521,83 @@ function ProjectView({
     if (!active) return;
     measure();
 
+    /* Overscroll past either end closes the panel — but only after a
+       sustained push.
+
+       The distance is ACCUMULATED across events rather than tested per
+       event, because a trackpad emits a long momentum tail after the
+       finger lifts; acting on any single delta makes the panel appear to
+       shut by itself at the end of an ordinary flick. The counter also
+       decays, so slow nudges against the edge never add up to a close —
+       it has to be one deliberate continuous push.
+
+       While overscrolled the rail rubber-bands at a quarter rate, so
+       there is visible resistance the whole way rather than a hard stop
+       followed by a sudden dismissal. */
     const onWheel = (e: WheelEvent) => {
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (!d) return;
       e.preventDefault();
+      if (closingRef.current) return;
 
       const max = maxScroll.current;
+      const now = performance.now();
+      /* One continuous gesture cannot both cross the rail and close it.
 
-      // Smooth scroll without accidental abrupt close on fast scrolling
-      if (targetX.current < 0 && d < 0) {
-        targetX.current += d * 0.25; // rubberband damping
-      } else if (targetX.current > max && d > 0) {
-        targetX.current += d * 0.25; // rubberband damping
-      } else {
-        targetX.current = Math.min(max + 140, Math.max(-140, targetX.current + d * 1.05));
+         `armed` is the timestamp at which the rail first reached an end
+         during THIS gesture. Overscroll only starts counting once the
+         wheel has been quiet for a moment after that — so a single fast
+         flick to the end stops there, and closing takes a second,
+         separate push. A gap also resets the accumulator, so slow nudges
+         never add up. */
+      const gap = now - overscroll.current.at;
+      if (gap > GESTURE_GAP) {
+        overscroll.current.px = 0;
+        overscroll.current.armed = true;
       }
+      overscroll.current.at = now;
+
+      const atStart = targetX.current <= 0;
+      const atEnd = targetX.current >= max;
+      const pushingPast = (atStart && d < 0) || (atEnd && d > 0);
+
+      /* Arriving at an end does not start the count.
+
+         A single fast flick across the whole rail ends with the target
+         pinned at the edge while momentum events keep coming, and those
+         would otherwise accumulate straight past the threshold and
+         close the panel the moment the reader reached the last card.
+         The rail has to SETTLE at the end first — the visible position
+         catches up to the target — before a further push counts as a
+         deliberate request to leave. */
+      if (pushingPast && !overscroll.current.armed) {
+        overscroll.current.px = 0;
+        targetX.current = Math.min(
+          max + OVERSCROLL_LIMIT,
+          Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
+        );
+        return;
+      }
+
+      if (pushingPast) {
+        overscroll.current.px += Math.abs(d);
+        // Rubber-band: the rail keeps giving, at a quarter rate.
+        targetX.current = Math.min(
+          max + OVERSCROLL_LIMIT,
+          Math.max(-OVERSCROLL_LIMIT, targetX.current + d * 0.25),
+        );
+        if (overscroll.current.px >= CLOSE_DISTANCE) {
+          closingRef.current = true;
+          onClose();
+        }
+        return;
+      }
+
+      // Scrolling within the rail disarms: reaching an end mid-flick
+      // must not leave the panel primed to close on the tail events.
+      overscroll.current.px = 0;
+      overscroll.current.armed = false;
+      targetX.current = Math.min(max, Math.max(0, targetX.current + d * SCROLL_GAIN));
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -548,7 +625,7 @@ function ProjectView({
       targetX.current = 0;
       currentX.current = 0;
     };
-  }, [active, measure]);
+  }, [active, measure, onClose]);
 
   // Pointer drag handling with smooth inertia
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -575,7 +652,10 @@ function ProjectView({
 
     const delta = dragStart.current.x - e.clientX;
     const max = maxScroll.current;
-    targetX.current = Math.min(max + 100, Math.max(-100, dragStart.current.scroll + delta));
+    targetX.current = Math.min(
+      max + OVERSCROLL_LIMIT,
+      Math.max(-OVERSCROLL_LIMIT, dragStart.current.scroll + delta),
+    );
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -586,8 +666,17 @@ function ProjectView({
     const inertia = dragStart.current.velocity * 160;
     const finalTarget = targetX.current + inertia;
 
-    // Clamp scroll safely to valid bounds on swipe release
-    targetX.current = Math.min(max, Math.max(0, finalTarget));
+    /* A drag released well past either end closes, mirroring the wheel.
+       The threshold is most of the rubber-band range, so a lazy overpull
+       springs back and only a committed drag dismisses. */
+    const DRAG_CLOSE = OVERSCROLL_LIMIT * 0.8;
+    if (!closingRef.current && (finalTarget < -DRAG_CLOSE || finalTarget > max + DRAG_CLOSE)) {
+      closingRef.current = true;
+      targetX.current = Math.min(max, Math.max(0, finalTarget));
+      onClose();
+    } else {
+      targetX.current = Math.min(max, Math.max(0, finalTarget));
+    }
 
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -733,7 +822,7 @@ function ProjectView({
           </div>
         </div>
 
-        {/* 3 — Screenshots & Next Project Endcap */}
+        {/* 3 — Screenshots */}
         <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isOpen, 0.78)}>
           {p.shot ? (
             <div className="relative h-[62vh] w-[min(80vw,36rem)] shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md">
@@ -754,27 +843,6 @@ function ProjectView({
             </div>
           )}
 
-          {/* End-Cap: Next Project Card */}
-          <div className="flex h-full shrink-0 flex-col justify-center px-[4vw]">
-            <p className="t-label mb-3 font-semibold opacity-60 font-sans">Next Project</p>
-            <button
-              onClick={() => onStep(1)}
-              tabIndex={active ? 0 : -1}
-              className="group text-left transition-transform hover:translate-x-2 cursor-pointer"
-              style={{ color: fg }}
-            >
-              <div className="flex items-center gap-3">
-                <span className="whitespace-nowrap font-bold leading-none tracking-tight font-sans" style={{ fontSize: "min(14vh, 9vw)" }}>
-                  {ORDER[(projectIndex + 1) % totalProjects].name}
-                </span>
-                <div className="grid size-12 place-items-center rounded-full bg-current/15 transition-transform group-hover:scale-110">
-                  <svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              </div>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -834,7 +902,7 @@ function ProjectView({
         {/* Bottom Hint */}
         <div className="pointer-events-none self-start rounded-full bg-current/10 px-3.5 py-1.5 backdrop-blur-md">
           <p className="t-label text-xs opacity-60" style={{ color: fg }}>
-            scroll sideways to explore — press Esc or Close to return
+            scroll sideways to explore — keep scrolling past either end to close
           </p>
         </div>
       </div>
