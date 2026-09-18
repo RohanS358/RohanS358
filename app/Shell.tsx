@@ -174,7 +174,7 @@ export default function Shell() {
           className="relative h-[60svh] w-[min(56rem,86vw)]"
         >
         {ORDER.map((p, i) => {
-          const dim = hover !== null && hover !== p.slug;
+          const lift = hover === p.slug;
           return (
             <button
               key={p.slug}
@@ -206,13 +206,22 @@ export default function Shell() {
                   "border-radius var(--dur-move) var(--ease-move)",
                   "opacity 0.5s var(--ease)",
                   "transform var(--dur) var(--ease)",
+                  "box-shadow var(--dur) var(--ease)",
                 ].join(", "),
                 transform: ready
-                  ? hover === p.slug
-                    ? "scale(1.03)"
+                  ? lift
+                    ? "scale(1.04)"
                     : "none"
                   : "translateY(18px)",
-                opacity: ready ? (dim ? 0.3 : 1) : 0,
+                // Colour stays at full strength whatever is hovered.
+                // Dimming the other ten to 0.3 turned the whole collage
+                // pastel, and because the layout reshuffles under a
+                // stationary cursor, that washed-out state engaged
+                // without the reader ever aiming at anything. Scale and
+                // z-order carry the focus instead.
+                opacity: ready ? 1 : 0,
+                zIndex: lift ? 2 : 1,
+                boxShadow: lift ? "0 12px 32px rgb(0 0 0 / 0.18)" : "none",
                 transitionDelay: ready ? "0ms" : `${i * 40}ms`,
               }}
             />
