@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { PROFILE } from "./content";
-import { cn } from "@/lib/utils";
 
 /* Rethink Sans — used everywhere across the site. */
 
@@ -26,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={cn("h-full", rethink.variable, "font-sans")}
+      className={`${rethink.variable} h-full`}
     >
       <body className="min-h-full font-sans antialiased">
         <a

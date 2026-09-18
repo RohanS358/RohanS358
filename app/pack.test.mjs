@@ -2,7 +2,7 @@
    while shapes are animating between layouts. Column bands make that
    structural: each shape owns its horizontal span for the whole
    animation, so no two can ever occupy the same space. */
-import { pack, radii, COLS, ROWS } from './pack.ts';
+import { pack, radii, PHASES, COLS, ROWS } from './pack.ts';
 
 let fail = 0;
 const N = 11;
@@ -42,13 +42,25 @@ for (let seed = 1; seed <= 300; seed++) {
    invariant we DO guarantee is that every resting layout is a clean
    packing, which is what the loop above checks. */
 
-const corners = radii(42, 3).split(' ');
-if (corners.length !== 4) { console.log('radii should give 4 corners, got', corners.length); fail++; }
-if (new Set(Array.from({ length: 60 }, (_, i) => radii(i, i))).size < 30) {
-  console.log('radii not varied enough'); fail++;
+/* Corners are square by design: the blocks butt against each other to
+   form one cut-up plane, and any rounding opens a gap of paper at every
+   junction. Asserted so a future "let's soften it" change has to be
+   deliberate rather than accidental. */
+/* The four phases must be visually distinct and every tile must get a
+   value in each one. A phase that silently returns undefined drops
+   border-radius entirely, which looks like "the morph stopped working"
+   rather than an error. */
+for (const ph of PHASES) {
+  for (let i = 0; i < 11; i++) {
+    const v = radii(ph, i);
+    if (typeof v !== 'string' || !v) { console.log(`radii(${ph}, ${i}) gave`, v); fail++; }
+  }
+}
+if (new Set(PHASES.map((ph) => radii(ph, 0))).size !== PHASES.length) {
+  console.log('phases are not visually distinct'); fail++;
 }
 
 console.log(fail
   ? `${fail} FAILURE(S)`
-  : `PASS — ${N} shapes over 300 layouts: full-grid packing, no overlaps, no holes, in bounds; 4 independent corners`);
+  : `PASS — ${N} shapes over 300 layouts: full-grid packing, no overlaps, no holes, in bounds; 4 distinct corner phases`);
 process.exit(fail ? 1 : 0);

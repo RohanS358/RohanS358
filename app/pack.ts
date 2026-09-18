@@ -148,22 +148,44 @@ export function pack(n: number, seed: number, o: Orientation = "landscape"): Rec
 }
 
 /**
- * Four independently random corner radii.
+ * Corner-radius phases.
  *
- * Deliberately varying per shape corner to give each block its own sleek,
- * tapered silhouette without distorting into unnatural ovals.
+ * The reference composition holds its layout still and cycles the
+ * SILHOUETTES: square, then one rounded shoulder, then full circles,
+ * then capsules. Reading it as four phases of one grid — rather than
+ * four different layouts — is what keeps it legible; the eye tracks a
+ * block changing shape instead of re-finding it somewhere new.
+ *
+ * Each phase returns a border-radius for one tile. `index` lets a phase
+ * vary per tile (which shoulder is rounded) while staying deterministic.
  */
-export function radii(seed: number, index: number): string {
-  const rand = rng(seed * 7919 + index * 104729);
-  const pick = () => {
-    const r = rand();
-    if (r < 0.22) return "0.5rem";
-    if (r < 0.6) return `${(0.85 + rand() * 0.9).toFixed(2)}rem`;
-    if (r < 0.88) return `${(1.8 + rand() * 1.2).toFixed(2)}rem`;
-    return "2.75rem";
-  };
-  return `${pick()} ${pick()} ${pick()} ${pick()}`;
+export type Phase = "square" | "shoulder" | "round" | "capsule";
+
+export const PHASES: Phase[] = ["square", "shoulder", "round", "capsule"];
+
+export function radii(phase: Phase, index: number): string {
+  switch (phase) {
+    case "square":
+      return "0px";
+    case "shoulder": {
+      // Rotate which corner carries the arch so the row does not read
+      // as one shape stamped repeatedly.
+      const r = "45%";
+      switch (index % 4) {
+        case 0: return `${r} 0px 0px 0px`;
+        case 1: return `0px ${r} 0px 0px`;
+        case 2: return `0px 0px ${r} 0px`;
+        default: return `0px 0px 0px ${r}`;
+      }
+    }
+    case "round":
+      return "50%";
+    case "capsule":
+      // Rounded hard on the short axis; the long axis stays a bar.
+      return "9999px";
+  }
 }
+
 
 
 

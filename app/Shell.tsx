@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { PROFILE, PROJECTS, type Project } from "./content";
-import { pack, radii, GRID, type Orientation } from "./pack";
+import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
 
 /* ============================================================
    Two states, one screen, no document scrolling — ever.
@@ -77,6 +77,8 @@ export default function Shell() {
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [seed, setSeed] = useState(1);
+  // Which silhouette the whole grid is wearing. See PHASES in pack.ts.
+  const [phase, setPhase] = useState(0);
   const [orient, setOrient] = useState<Orientation>("landscape");
   const [from, setFrom] = useState<Origin | null>(null);
 
@@ -99,11 +101,21 @@ export default function Shell() {
     };
   }, []);
 
-  // Cycle the shapes on a slow 2.6s loop. Paused when a project is open or hovered.
+  /* The composition cycles on a slow loop, paused when a project is
+     open or a tile is hovered.
+
+     Position AND silhouette advance on the same tick: the reference
+     repacks its grid and changes its corners together, so a block
+     glides to a new cell while it is also becoming a circle. Changing
+     only one at a time reads as two separate effects rather than one
+     composition rearranging itself. */
   useEffect(() => {
     if (slug || hover) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(() => setSeed((n) => n + 1), 2600);
+    const t = setInterval(() => {
+      setSeed((n) => n + 1);
+      setPhase((p) => p + 1);
+    }, 2600);
     return () => clearInterval(t);
   }, [slug, hover]);
 
@@ -131,7 +143,7 @@ export default function Shell() {
       if (i < 0) return;
       const n = (i + dir + ORDER.length) % ORDER.length;
       const targetSlug = ORDER[n].slug;
-      
+
       const targetEl = document.querySelector(`[data-tile="${targetSlug}"]`) as HTMLElement;
       if (targetEl) {
         setFrom({ rect: targetEl.getBoundingClientRect(), radius: getComputedStyle(targetEl).borderRadius });
@@ -162,7 +174,7 @@ export default function Shell() {
 
   return (
     <div
-      className="fixed inset-0 overflow-hidden"
+      className="fixed inset-0 overflow-hidden font-sans"
       style={{
         background: "var(--color-paper)",
       }}
@@ -174,8 +186,8 @@ export default function Shell() {
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
           transition: active
-            ? "opacity 0.28s linear 0.22s"
-            : "opacity 0.2s linear",
+            ? "opacity 0.25s linear 0.2s"
+            : "opacity 0.25s linear 0.1s",
         }}
         aria-hidden={Boolean(active)}
       >
@@ -203,7 +215,7 @@ export default function Shell() {
                   width: `${(boxes[i].w / grid.cols) * 100}%`,
                   height: `${(boxes[i].h / grid.rows) * 100}%`,
                   background: TONE[p.slug],
-                  borderRadius: radii(seed, i),
+                  borderRadius: radii(PHASES[phase % PHASES.length], i),
                   transition: [
                     "left var(--dur-move) var(--ease-move)",
                     "top var(--dur-move) var(--ease-move)",
@@ -238,36 +250,39 @@ export default function Shell() {
           transition: "opacity 0.4s var(--ease)",
         }}
       >
-        <div className="flex items-start justify-between">
-          <div className="pointer-events-auto rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md">
-            <span className="t-small font-medium">{PROFILE.name}</span>
-          </div>
-          <a
-            href={`mailto:${PROFILE.email}`}
-            className="pointer-events-auto rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md transition-transform hover:scale-105"
-            tabIndex={active ? -1 : 0}
-          >
-            <span className="t-small link">Contact</span>
-          </a>
-        </div>
+        {/* Nothing at the top. The reference keeps the whole upper field
+            empty so the composition is the only thing on screen. */}
+        <div />
 
-        <div className="pointer-events-auto self-start rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md">
-          <p className="t-small" aria-live="polite">
+        {/* Name and caption sit on one baseline at the bottom, set tiny
+            and uppercase, flat on the paper — no pill, no blur, no
+            shadow. Those chips were competing with the blocks for
+            attention, which is exactly what the reference avoids. */}
+        <div className="flex items-end justify-between gap-6">
+          <p className="t-meta" aria-live="polite">
             {hovered ? (
               <>
-                {hovered.name}
+                <span className="text-ink">{hovered.name}</span>
                 <span className="text-ink-3">
                   {" — "}
                   {hovered.year}
-                  {hovered.commits
-                    ? `, ${hovered.commits.toLocaleString()} commits`
-                    : ""}
                 </span>
               </>
             ) : (
               <span className="text-ink-3">{PROFILE.shortBio}</span>
             )}
           </p>
+
+          <div className="pointer-events-auto flex shrink-0 items-center gap-5">
+            <a
+              href={`mailto:${PROFILE.email}`}
+              className="t-meta link"
+              tabIndex={active ? -1 : 0}
+            >
+              Contact
+            </a>
+            <span className="t-meta text-ink">{PROFILE.name}</span>
+          </div>
         </div>
       </div>
 
@@ -288,6 +303,8 @@ export default function Shell() {
     </div>
   );
 }
+
+type Phase = "closed" | "opening" | "open" | "closing";
 
 /**
  * ProjectView: full-screen case study that expands from the clicked tile
@@ -313,20 +330,9 @@ function ProjectView({
   projectIndex: number;
   totalProjects: number;
 }) {
-  const [opened, setOpened] = useState(false);
-  /* Mirrors `opened` for the lifecycle effect below, which must not
-     depend on it: that effect clears `opened`, so depending on it makes
-     the effect re-run and cancel its own teardown timer. */
-  const openedRef = useRef(false);
-  useEffect(() => {
-    openedRef.current = opened;
-  }, [opened]);
-  const [closing, setClosing] = useState(false);
+  const [phase, setPhase] = useState<Phase>("closed");
   const [liveOrigin, setLiveOrigin] = useState<Origin | null>(from);
   const [progress, setProgress] = useState(0);
-
-  const isVisible = active || closing;
-  const isExpanded = active && opened;
 
   const targetX = useRef(0);
   const currentX = useRef(0);
@@ -337,54 +343,58 @@ function ProjectView({
   const isDragging = useRef(false);
   const dragStart = useRef({ x: 0, scroll: 0, lastX: 0, velocity: 0, time: 0 });
 
-  // Handle opening and closing lifecycle
-  /* useLayoutEffect, not useEffect: the origin rect must be measured and
-     committed BEFORE the browser paints, or the panel paints one frame
-     at its previous rect and the expansion visibly starts from the
-     wrong place. */
-  useLayoutEffect(() => {
+  // Phase state machine for opening & closing
+  useEffect(() => {
     if (active) {
-      // Re-query the live tile: the collage reshuffles on a timer, so a
-      // rect captured at click time can be stale by the time we animate.
+      // Re-measure the live tile: the collage repacks on a timer, so a
+      // rect captured at click time is stale by the time we animate.
       const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
       if (tileEl) {
-        // Measuring the DOM and storing the result is the documented
-        // exception to the no-setState-in-effect rule; there is no way
-        // to read a live rect during render.
+        // Reading layout and storing it is the documented exception to
+        // the no-setState-in-effect rule; a live rect cannot be read
+        // during render.
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setLiveOrigin({
           rect: tileEl.getBoundingClientRect(),
           radius: getComputedStyle(tileEl).borderRadius,
         });
+      } else if (from) {
+        setLiveOrigin(from);
       }
-      setClosing(false);
-      const raf = requestAnimationFrame(() => setOpened(true));
+      setPhase("opening");
+      const raf = requestAnimationFrame(() => setPhase("open"));
       return () => cancelAnimationFrame(raf);
-    }
-
-    if (!openedRef.current) return;
-
-    /* Closing.
-
-       `opened` must NOT be a dependency of this effect. Clearing it
-       here re-runs the effect immediately; on that pass neither branch
-       matches, so the cleanup below tore down the teardown timer before
-       it fired and `closing` stayed true forever — which left a panel
-       painted at a tile rect on screen after every close. */
-    const tileEl = document.querySelector(
-      `[data-tile="${p.slug}"]`,
-    ) as HTMLElement | null;
-    if (tileEl) {
-      setLiveOrigin({
-        rect: tileEl.getBoundingClientRect(),
-        radius: getComputedStyle(tileEl).borderRadius,
+    } else {
+      setPhase((prev) => {
+        if (prev === "open" || prev === "opening") {
+          const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
+          if (tileEl) {
+            setLiveOrigin({
+              rect: tileEl.getBoundingClientRect(),
+              radius: getComputedStyle(tileEl).borderRadius,
+            });
+          }
+          targetX.current = 0; // smoothly return rail to origin
+          return "closing";
+        }
+        return prev;
       });
     }
-    setOpened(false);
-    setClosing(true);
-    const timer = setTimeout(() => setClosing(false), 520);
-    return () => clearTimeout(timer);
-  }, [active, p.slug]);
+  }, [active, from, p.slug]);
+
+  // Timer for closing completion
+  useEffect(() => {
+    if (phase === "closing") {
+      const timer = setTimeout(() => {
+        setPhase("closed");
+      }, 420);
+      return () => clearTimeout(timer);
+    }
+  }, [phase]);
+
+  const isVisible = phase !== "closed";
+  const isOpen = phase === "open";
+  const isClosing = phase === "closing";
 
   const measure = useCallback(() => {
     const el = railRef.current;
@@ -393,7 +403,7 @@ function ProjectView({
     return maxScroll.current;
   }, []);
 
-  // Continuous RAF lerp physics loop for smooth 60/120fps horizontal scrolling
+  // Continuous RAF lerp physics loop for smooth horizontal scrolling
   useEffect(() => {
     if (!isVisible) return;
     measure();
@@ -408,6 +418,13 @@ function ProjectView({
         currentX.current += dx * 0.16;
       } else {
         currentX.current = targetX.current;
+      }
+
+      // Rebound rubberband if out of bounds and not actively wheeling
+      if (!isDragging.current && targetX.current < 0) {
+        targetX.current *= 0.82;
+      } else if (!isDragging.current && targetX.current > max) {
+        targetX.current = max + (targetX.current - max) * 0.82;
       }
 
       if (railRef.current) {
@@ -432,32 +449,26 @@ function ProjectView({
     };
   }, [isVisible, measure]);
 
-  // Event handlers for wheel, touch/pointer, and keyboard nav
+  // Event handlers for wheel and keyboard nav
   useEffect(() => {
     if (!active) return;
     measure();
 
-    let overscroll = 0;
-    let isClosingTriggered = false;
-
     const onWheel = (e: WheelEvent) => {
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (!d || isClosingTriggered) return;
+      if (!d) return;
       e.preventDefault();
 
       const max = maxScroll.current;
-      const next = targetX.current + d * 1.05;
 
-      const pushing = (targetX.current <= 0 && d < 0) || (targetX.current >= max && d > 0);
-      overscroll = pushing ? overscroll + Math.abs(d) : 0;
-
-      if (overscroll > 160) {
-        isClosingTriggered = true;
-        onClose();
-        return;
+      // Smooth scroll without accidental abrupt close on fast scrolling
+      if (targetX.current < 0 && d < 0) {
+        targetX.current += d * 0.25; // rubberband damping
+      } else if (targetX.current > max && d > 0) {
+        targetX.current += d * 0.25; // rubberband damping
+      } else {
+        targetX.current = Math.min(max + 140, Math.max(-140, targetX.current + d * 1.05));
       }
-
-      targetX.current = Math.min(max + 60, Math.max(-60, next));
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -485,7 +496,7 @@ function ProjectView({
       targetX.current = 0;
       currentX.current = 0;
     };
-  }, [active, measure, onClose]);
+  }, [active, measure]);
 
   // Pointer drag handling with smooth inertia
   const handlePointerDown = (e: React.PointerEvent) => {
@@ -520,15 +531,11 @@ function ProjectView({
     isDragging.current = false;
 
     const max = maxScroll.current;
-    // Apply inertia toss
-    const inertia = dragStart.current.velocity * 180;
+    const inertia = dragStart.current.velocity * 160;
     const finalTarget = targetX.current + inertia;
 
-    if (finalTarget < -100 || finalTarget > max + 100) {
-      onClose();
-    } else {
-      targetX.current = Math.min(max, Math.max(0, finalTarget));
-    }
+    // Clamp scroll safely to valid bounds on swipe release
+    targetX.current = Math.min(max, Math.max(0, finalTarget));
 
     try {
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
@@ -539,29 +546,35 @@ function ProjectView({
 
   // Compute expansion clipPath
   const growth = (() => {
-    if (isExpanded) return "inset(0px 0px 0px 0px round 0px)";
-    if (!isVisible || !liveOrigin) return "inset(100% 0% 0% 0% round 0px)";
+    if (isOpen) return "inset(0px 0px 0px 0px round 0px)";
+    if (!isVisible) return "inset(100% 0% 0% 0% round 0px)";
 
-    const { rect, radius } = liveOrigin;
-    const right = Math.max(0, window.innerWidth - rect.right);
-    const bottom = Math.max(0, window.innerHeight - rect.bottom);
-    return `inset(${rect.top.toFixed(1)}px ${right.toFixed(1)}px ${bottom.toFixed(1)}px ${rect.left.toFixed(1)}px round ${radius})`;
+    if (liveOrigin) {
+      const { rect, radius } = liveOrigin;
+      const right = Math.max(0, window.innerWidth - rect.right);
+      const bottom = Math.max(0, window.innerHeight - rect.bottom);
+      return `inset(${rect.top.toFixed(1)}px ${right.toFixed(1)}px ${bottom.toFixed(1)}px ${rect.left.toFixed(1)}px round ${radius})`;
+    }
+
+    return "inset(20% 20% 20% 20% round 2rem)";
   })();
 
   return (
     <section
       aria-hidden={!active}
       aria-label={`${p.name} case study`}
-      className="absolute inset-0 overflow-hidden"
+      className="absolute inset-0 overflow-hidden font-sans"
       style={{
         background: TONE[p.slug],
         color: fg,
         clipPath: growth,
         WebkitClipPath: growth,
-        transition: "clip-path var(--dur-panel) var(--ease-panel)",
+        transition: isClosing
+          ? "clip-path 0.42s cubic-bezier(0.32, 0, 0.67, 0)"
+          : "clip-path 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
         willChange: "clip-path",
         pointerEvents: active ? "auto" : "none",
-        zIndex: active ? 30 : closing ? 25 : 0,
+        zIndex: active ? 30 : isClosing ? 25 : 0,
         visibility: isVisible ? "visible" : "hidden",
       }}
       onPointerDown={handlePointerDown}
@@ -578,9 +591,9 @@ function ProjectView({
         }}
       >
         {/* 1 — Giant Project Title */}
-        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isExpanded, 0.12)}>
+        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isOpen, 0.12)}>
           <h2
-            className="whitespace-nowrap font-bold leading-[0.8] tracking-tighter select-none"
+            className="whitespace-nowrap font-bold leading-[0.8] tracking-tighter select-none font-sans"
             style={{ fontSize: "min(42vh, 22vw)" }}
           >
             {p.name}
@@ -590,13 +603,13 @@ function ProjectView({
         {/* 2 — Description & Project Details */}
         <div
           className="flex h-full w-[min(88vw,32rem)] shrink-0 flex-col justify-center gap-6 px-[4vw]"
-          style={rise(isExpanded, 0.18)}
+          style={rise(isOpen, 0.18)}
         >
-          <p className="t-body text-base sm:text-lg font-medium leading-relaxed" style={{ opacity: 0.94 }}>
+          <p className="t-body text-base sm:text-lg font-medium leading-relaxed font-sans" style={{ opacity: 0.94 }}>
             {p.line}
           </p>
 
-          <dl className="grid grid-cols-3 gap-4 border-y border-current/15 py-4">
+          <dl className="grid grid-cols-3 gap-4 border-y border-current/15 py-4 font-sans">
             <div>
               <dt className="t-label opacity-60">Year</dt>
               <dd className="t-small text-sm font-semibold mt-0.5">{p.year}</dd>
@@ -619,14 +632,14 @@ function ProjectView({
             {p.tech.map((t) => (
               <span
                 key={t}
-                className="t-label rounded-full bg-current/10 px-3 py-1 text-xs font-semibold backdrop-blur-sm"
+                className="t-label rounded-full bg-current/10 px-3 py-1 text-xs font-semibold backdrop-blur-sm font-sans"
               >
                 {t}
               </span>
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-4 pt-2">
+          <div className="flex flex-wrap items-center gap-4 pt-2 font-sans">
             {p.live ? (
               <a
                 href={p.live}
@@ -661,7 +674,7 @@ function ProjectView({
         </div>
 
         {/* 3 — Screenshots & Next Project Endcap */}
-        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isExpanded, 0.24)}>
+        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isOpen, 0.24)}>
           {p.shot ? (
             <div className="relative h-[62vh] w-[min(80vw,36rem)] shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md">
               <Image
@@ -674,7 +687,7 @@ function ProjectView({
               />
             </div>
           ) : (
-            <div className="grid h-[62vh] w-[min(80vw,36rem)] shrink-0 place-items-center rounded-2xl border border-dashed border-current/25 bg-current/5">
+            <div className="grid h-[62vh] w-[min(80vw,36rem)] shrink-0 place-items-center rounded-2xl border border-dashed border-current/25 bg-current/5 font-sans">
               <span className="t-label font-medium opacity-70">
                 Interactive preview coming soon
               </span>
@@ -683,15 +696,15 @@ function ProjectView({
 
           {/* End-Cap: Next Project Card */}
           <div className="flex h-full shrink-0 flex-col justify-center px-[4vw]">
-            <p className="t-label mb-3 font-semibold opacity-60">Next Project</p>
+            <p className="t-label mb-3 font-semibold opacity-60 font-sans">Next Project</p>
             <button
               onClick={() => onStep(1)}
               tabIndex={active ? 0 : -1}
-              className="group text-left transition-transform hover:translate-x-2"
+              className="group text-left transition-transform hover:translate-x-2 cursor-pointer"
               style={{ color: fg }}
             >
               <div className="flex items-center gap-3">
-                <span className="whitespace-nowrap font-bold leading-none tracking-tight" style={{ fontSize: "min(14vh, 9vw)" }}>
+                <span className="whitespace-nowrap font-bold leading-none tracking-tight font-sans" style={{ fontSize: "min(14vh, 9vw)" }}>
                   {ORDER[(projectIndex + 1) % totalProjects].name}
                 </span>
                 <div className="grid size-12 place-items-center rounded-full bg-current/15 transition-transform group-hover:scale-110">
@@ -706,7 +719,13 @@ function ProjectView({
       </div>
 
       {/* ---------- Header & Chrome ---------- */}
-      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7">
+      <div
+        className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7 font-sans"
+        style={{
+          opacity: isOpen ? 1 : 0,
+          transition: isOpen ? "opacity 0.3s var(--ease) 0.1s" : "opacity 0.1s ease-out",
+        }}
+      >
         {/* Top Floating Header Bar */}
         <div className="flex items-center justify-between gap-4">
           <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-current/10 px-4 py-2 backdrop-blur-md">
@@ -731,7 +750,7 @@ function ProjectView({
             onClick={onClose}
             tabIndex={active ? 0 : -1}
             aria-label="Close project case study (Escape)"
-            className="pointer-events-auto flex items-center gap-2 rounded-full bg-current/10 px-4 py-2 font-semibold backdrop-blur-md transition-all hover:bg-current/25 hover:scale-105"
+            className="pointer-events-auto flex items-center gap-2 rounded-full bg-current/10 px-4 py-2 font-semibold backdrop-blur-md transition-all hover:bg-current/25 hover:scale-105 cursor-pointer"
             style={{ color: fg }}
           >
             <span className="text-xs font-semibold">Close</span>
@@ -753,7 +772,7 @@ function ProjectView({
         {/* Bottom Hint */}
         <div className="pointer-events-none self-start rounded-full bg-current/10 px-3.5 py-1.5 backdrop-blur-md">
           <p className="t-label text-xs opacity-60" style={{ color: fg }}>
-            scroll or drag sideways — pull past edge to close
+            scroll sideways to explore — press Esc or Close to return
           </p>
         </div>
       </div>
@@ -763,15 +782,15 @@ function ProjectView({
 
 /**
  * Content entrance & exit animation style generator.
- * Fast entrance (0.4s) with staggered delay when opening,
- * instant exit (0.12s, no delay) when closing.
+ * Fast entrance (0.38s) with staggered delay when opening,
+ * instant exit (0.1s, no delay) when closing.
  */
 function rise(open: boolean, delay: number): React.CSSProperties {
   return {
     opacity: open ? 1 : 0,
-    transform: open ? "none" : "translateY(18px)",
+    transform: open ? "none" : "translateY(14px)",
     transition: open
-      ? `opacity 0.4s var(--ease) ${delay}s, transform 0.4s var(--ease) ${delay}s`
-      : "opacity 0.12s ease-out, transform 0.12s ease-out",
+      ? `opacity 0.38s var(--ease) ${delay}s, transform 0.38s var(--ease) ${delay}s`
+      : "opacity 0.1s ease-out, transform 0.1s ease-out",
   };
 }
