@@ -71,6 +71,9 @@ const inkOn = (slug: string | null) => {
  */
 
 
+/** Where an expansion starts: the tile's rect and its own corners. */
+type Origin = { rect: DOMRect; radius: string };
+
 function parseHash(): string | null {
   if (typeof window === "undefined") return null;
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -90,7 +93,7 @@ export default function Shell() {
   // into a tall box, which otherwise makes every cell a thin sliver.
   const [orient, setOrient] = useState<Orientation>("landscape");
   // The rect the panel grows from: the tile that was actually clicked.
-  const [from, setFrom] = useState<DOMRect | null>(null);
+  const [from, setFrom] = useState<Origin | null>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-aspect-ratio: 1/1)");
@@ -125,7 +128,14 @@ export default function Shell() {
   }, [slug, hover]);
 
   const open = useCallback((s: string, el?: HTMLElement) => {
-    if (el) setFrom(el.getBoundingClientRect());
+    if (el) {
+      const r = el.getBoundingClientRect();
+      // Carry the tile's own corner radius into the expansion. A fixed
+      // radius here made a pill-shaped tile turn into a rounded
+      // rectangle the instant it was clicked, so the growth started
+      // from a shape the reader had never seen.
+      setFrom({ rect: r, radius: getComputedStyle(el).borderRadius });
+    }
     window.location.hash = `/p/${s}`;
   }, []);
 
@@ -182,14 +192,20 @@ export default function Shell() {
         style={{
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
-          // Held at full opacity until the panel has grown over it, then
-          // cut instantly. Cross-fading here made the tile dissolve out
-          // from under the shape that is supposed to be expanding FROM
-          // it; on the way back the collage must already be there when
-          // the panel finishes retracting, hence the asymmetric delay.
+          /* The collage must not cross-fade while the panel is growing:
+             the tile would dissolve out from under the very shape that
+             is expanding FROM it. But cutting it at the end of the
+             expansion put eleven tiles out in a single frame, which is
+             the abrupt switch.
+
+             So it fades over the LAST third of the growth, by which
+             point the panel already covers most of the screen and the
+             fade happens behind it. Opening and closing are asymmetric
+             on purpose — on the way back the collage has to be fully
+             painted before the panel finishes retracting into it. */
           transition: active
-            ? "opacity 0s var(--ease) var(--dur-panel)"
-            : "opacity 0s var(--ease)",
+            ? "opacity 0.34s linear 0.6s"
+            : "opacity 0.2s linear",
         }}
         aria-hidden={Boolean(active)}
       >
@@ -298,7 +314,12 @@ export default function Shell() {
       {/* ---------- PROJECT views ---------- */}
       {ORDER.map((p) => (
         <ProjectView
-          key={`${p.slug}-${slug === p.slug}`}
+          /* Stable key. Including `active` here changed the key on
+             every open and close, so React unmounted the panel and
+             mounted a fresh one — which destroyed the state driving the
+             retraction, and the panel vanished instead of shrinking
+             back into its tile. */
+          key={p.slug}
           p={p}
           active={slug === p.slug}
           fg={inkOn(p.slug)}
@@ -327,7 +348,7 @@ function ProjectView({
   p: Project;
   active: boolean;
   fg: string;
-  from: DOMRect | null;
+  from: Origin | null;
   onClose: () => void;
   onStep: (d: 1 | -1) => void;
 }) {
@@ -338,6 +359,24 @@ function ProjectView({
   // Never 'open' while inactive, so a close always has a rect to
   // retract INTO rather than leaving the panel stuck full-screen.
   const open = active && opened;
+  /* True while this panel is retracting: it is no longer active, but it
+     WAS open a moment ago, so it must keep painting at the tile rect
+     until the animation finishes. Without this the panel jumps straight
+     to the hidden state and the close has no visible retraction. */
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (active || !opened) return;
+    // Deferred, not synchronous: this reacts to `active` going false and
+    // only needs to hold the panel painted for the length of the
+    // retraction, so a frame's delay costs nothing and keeps the effect
+    // out of the render path.
+    const on = requestAnimationFrame(() => setClosing(true));
+    const off = setTimeout(() => setClosing(false), 1040);
+    return () => {
+      cancelAnimationFrame(on);
+      clearTimeout(off);
+    };
+  }, [active, opened]);
   const railRef = useRef<HTMLDivElement>(null);
   const maxRef = useRef(0);
 
@@ -420,10 +459,12 @@ function ProjectView({
     // tile rect: all eleven live in the DOM at once, so returning a
     // visible rect here stacked ten coloured blocks on the collage and
     // made the expansion look instant.
-    if (!active || !from) return "inset(100% 0% 0% 0% round 0px)";
-    const right = Math.max(0, window.innerWidth - from.right);
-    const bottom = Math.max(0, window.innerHeight - from.bottom);
-    return `inset(${from.top}px ${right}px ${bottom}px ${from.left}px round 28px)`;
+    if ((!active && !closing) || !from)
+      return "inset(100% 0% 0% 0% round 0px)";
+    const { rect } = from;
+    const right = Math.max(0, window.innerWidth - rect.right);
+    const bottom = Math.max(0, window.innerHeight - rect.bottom);
+    return `inset(${rect.top}px ${right}px ${bottom}px ${rect.left}px round ${from.radius})`;
   })();
 
   return (

@@ -40,11 +40,12 @@
   --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
   --dur-move: 1.4s;
   /* The tile-to-page expansion.
-     Symmetric ease-in-out, NOT the ease-out used elsewhere: an ease-out
-     leaves at full speed, so the shape appeared to jump and then settle
-     rather than to grow. Easing in as well gives the block a moment of
-     acceleration, which is what makes the size change legible. */
-  --ease-panel: cubic-bezier(0.65, 0, 0.35, 1);
+     Ease-in-out, NOT the ease-out used elsewhere: an ease-out leaves at
+     full speed, so the shape appeared to jump and then settle rather
+     than to grow. But a hard ease-in (0.65, 0) spent the first third of
+     the second barely moving, which read as a delay before a rush —
+     this gentler in-curve stays legible from the first frames. */
+  --ease-panel: cubic-bezier(0.4, 0, 0.2, 1);
   --dur-panel: 1s;
   color-scheme: light;
   --background: oklch(1 0 0);
