@@ -27,16 +27,16 @@
 :root {
   /* The single shared curve for UI elements. */
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --dur: 0.4s;
+  --dur: 1.5s;
   /* The collage relayout: smooth fluid glide. */
   --ease-move: cubic-bezier(0.25, 1, 0.5, 1);
-  --dur-move: 1.2s;
+  --dur-move: 1.5s;
   /* The tile-to-page expansion: snappy, luxurious spring-out curve. */
   --ease-panel: cubic-bezier(1, -0.014, 0.586, 1.049);
-  --dur-panel: 0.45s;
+  --dur-panel: 1.5s;
   /* The panel closing retraction: smooth ease-in-out curve. */
   --ease-panel-close: cubic-bezier(1, -0.014, 0.586, 1.049);
-  --dur-panel-close: 0.38s;
+  --dur-panel-close: 1.5s;
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

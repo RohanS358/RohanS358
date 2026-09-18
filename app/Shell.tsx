@@ -82,6 +82,7 @@ export default function Shell() {
   const [orient, setOrient] = useState<Orientation>("landscape");
   const [from, setFrom] = useState<Origin | null>(null);
 
+
   useEffect(() => {
     const mq = window.matchMedia("(max-aspect-ratio: 1/1)");
     const sync = () => setOrient(mq.matches ? "portrait" : "landscape");
@@ -129,7 +130,14 @@ export default function Shell() {
         setFrom({ rect: tileEl.getBoundingClientRect(), radius: getComputedStyle(tileEl).borderRadius });
       }
     }
-    window.location.hash = `/p/${s}`;
+    /* Open on the NEXT frame, after `from` has committed.
+       Changing the hash in the same tick fires hashchange, which sets
+       `slug` and mounts the panel — and that first render could land
+       before `from` arrived, leaving the panel with no origin to grow
+       from, which showed as a wipe up from the bottom. */
+    requestAnimationFrame(() => {
+      window.location.hash = `/p/${s}`;
+    });
   }, []);
 
   const close = useCallback(() => {
@@ -186,8 +194,8 @@ export default function Shell() {
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
           transition: active
-            ? "opacity 0.25s linear 0.2s"
-            : "opacity 0.25s linear 0.1s",
+            ? "opacity calc(var(--dur-panel) * 0.35) linear calc(var(--dur-panel) * 0.5)"
+            : "opacity calc(var(--dur-panel) * 0.25) linear",
         }}
         aria-hidden={Boolean(active)}
       >
@@ -222,9 +230,9 @@ export default function Shell() {
                     "width var(--dur-move) var(--ease-move)",
                     "height var(--dur-move) var(--ease-move)",
                     "border-radius var(--dur-move) var(--ease-move)",
-                    "opacity 0.4s var(--ease)",
-                    "transform 0.4s var(--ease)",
-                    "box-shadow 0.4s var(--ease)",
+                    "opacity var(--dur) var(--ease)",
+                    "transform var(--dur) var(--ease)",
+                    "box-shadow var(--dur) var(--ease)",
                   ].join(", "),
                   transform: ready
                     ? lift
@@ -247,7 +255,7 @@ export default function Shell() {
         className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7"
         style={{
           opacity: active ? 0 : 1,
-          transition: "opacity 0.4s var(--ease)",
+          transition: "opacity var(--dur) var(--ease)",
         }}
       >
         {/* Nothing at the top. The reference keeps the whole upper field
@@ -361,9 +369,53 @@ function ProjectView({
       } else if (from) {
         setLiveOrigin(from);
       }
+      /* Animate the expansion explicitly rather than by flipping a
+         class and hoping CSS finds a start value.
+
+         Two clip-path states set from React render in the same frame
+         however they are scheduled — nested rAFs, forced style flushes,
+         none of it survives React batching — so the browser never
+         composites the tile-rect frame and falls back to interpolating
+         from the hidden state, which is the wipe up from the bottom.
+         WAAPI takes both keyframes up front, so the start value is not
+         something the browser has to infer. */
       setPhase("opening");
-      const raf = requestAnimationFrame(() => setPhase("open"));
-      return () => cancelAnimationFrame(raf);
+      const el = document.querySelector(
+        `[data-panel="${p.slug}"]`,
+      ) as HTMLElement | null;
+      /* Measured here rather than read from `liveOrigin` state: the
+         state set moments ago in this same effect has not committed, and
+         depending on it would restart the animation every time it does. */
+      const measured = tileEl
+        ? {
+            rect: tileEl.getBoundingClientRect(),
+            radius: getComputedStyle(tileEl).borderRadius,
+          }
+        : from;
+      const start = originClip(measured);
+      let anim: Animation | null = null;
+      const raf = requestAnimationFrame(() => {
+        if (el && start) {
+          anim = el.animate(
+            [{ clipPath: start }, { clipPath: "inset(0px 0px 0px 0px round 0px)" }],
+            {
+              duration: cssMs("--dur-panel"),
+              easing: cssValue("--ease-panel"),
+              fill: "both",
+            },
+          );
+          anim.onfinish = () => {
+            anim?.cancel();
+            setPhase("open");
+          };
+        } else {
+          setPhase("open");
+        }
+      });
+      return () => {
+        cancelAnimationFrame(raf);
+        anim?.cancel();
+      };
     } else {
       setPhase((prev) => {
         if (prev === "open" || prev === "opening") {
@@ -382,14 +434,14 @@ function ProjectView({
     }
   }, [active, from, p.slug]);
 
-  // Timer for closing completion
+  /* Hold the panel mounted for exactly as long as the CSS retraction
+     runs, read from --dur-panel-close rather than hard-coded: a literal
+     here silently cuts the animation short the moment the duration is
+     retimed, and the panel disappears mid-retraction. */
   useEffect(() => {
-    if (phase === "closing") {
-      const timer = setTimeout(() => {
-        setPhase("closed");
-      }, 420);
-      return () => clearTimeout(timer);
-    }
+    if (phase !== "closing") return;
+    const timer = setTimeout(() => setPhase("closed"), closeMs() + 40);
+    return () => clearTimeout(timer);
   }, [phase]);
 
   const isVisible = phase !== "closed";
@@ -544,13 +596,20 @@ function ProjectView({
     }
   };
 
-  // Compute expansion clipPath
+  /* Compute the expansion clip.
+
+     The origin is read from `from` as a fallback when `liveOrigin` has
+     not been committed yet: state set inside the phase effect does not
+     reach the first painted frame, and without an origin on that frame
+     the browser interpolates from the hidden `inset(100%)` state — the
+     bottom wipe, instead of the block growing out of its tile. */
   const growth = (() => {
     if (isOpen) return "inset(0px 0px 0px 0px round 0px)";
     if (!isVisible) return "inset(100% 0% 0% 0% round 0px)";
 
-    if (liveOrigin) {
-      const { rect, radius } = liveOrigin;
+    const origin = liveOrigin ?? from;
+    if (origin) {
+      const { rect, radius } = origin;
       const right = Math.max(0, window.innerWidth - rect.right);
       const bottom = Math.max(0, window.innerHeight - rect.bottom);
       return `inset(${rect.top.toFixed(1)}px ${right.toFixed(1)}px ${bottom.toFixed(1)}px ${rect.left.toFixed(1)}px round ${radius})`;
@@ -563,6 +622,7 @@ function ProjectView({
     <section
       aria-hidden={!active}
       aria-label={`${p.name} case study`}
+      data-panel={p.slug}
       className="absolute inset-0 overflow-hidden font-sans"
       style={{
         background: TONE[p.slug],
@@ -570,8 +630,8 @@ function ProjectView({
         clipPath: growth,
         WebkitClipPath: growth,
         transition: isClosing
-          ? "clip-path 0.42s cubic-bezier(0.32, 0, 0.67, 0)"
-          : "clip-path 0.45s cubic-bezier(0.16, 1, 0.3, 1)",
+          ? "clip-path var(--dur-panel-close) var(--ease-panel-close)"
+          : "clip-path var(--dur-panel) var(--ease-panel)",
         willChange: "clip-path",
         pointerEvents: active ? "auto" : "none",
         zIndex: active ? 30 : isClosing ? 25 : 0,
@@ -591,7 +651,7 @@ function ProjectView({
         }}
       >
         {/* 1 — Giant Project Title */}
-        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isOpen, 0.12)}>
+        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isOpen, 0.62)}>
           <h2
             className="whitespace-nowrap font-bold leading-[0.8] tracking-tighter select-none font-sans"
             style={{ fontSize: "min(42vh, 22vw)" }}
@@ -603,7 +663,7 @@ function ProjectView({
         {/* 2 — Description & Project Details */}
         <div
           className="flex h-full w-[min(88vw,32rem)] shrink-0 flex-col justify-center gap-6 px-[4vw]"
-          style={rise(isOpen, 0.18)}
+          style={rise(isOpen, 0.7)}
         >
           <p className="t-body text-base sm:text-lg font-medium leading-relaxed font-sans" style={{ opacity: 0.94 }}>
             {p.line}
@@ -674,7 +734,7 @@ function ProjectView({
         </div>
 
         {/* 3 — Screenshots & Next Project Endcap */}
-        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isOpen, 0.24)}>
+        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isOpen, 0.78)}>
           {p.shot ? (
             <div className="relative h-[62vh] w-[min(80vw,36rem)] shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md">
               <Image
@@ -723,7 +783,9 @@ function ProjectView({
         className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7 font-sans"
         style={{
           opacity: isOpen ? 1 : 0,
-          transition: isOpen ? "opacity 0.3s var(--ease) 0.1s" : "opacity 0.1s ease-out",
+          transition: isOpen
+            ? "opacity calc(var(--dur-panel) * 0.4) var(--ease) calc(var(--dur-panel) * 0.55)"
+            : "opacity calc(var(--dur-panel-close) * 0.25) ease-out",
         }}
       >
         {/* Top Floating Header Bar */}
@@ -781,16 +843,53 @@ function ProjectView({
 }
 
 /**
- * Content entrance & exit animation style generator.
- * Fast entrance (0.38s) with staggered delay when opening,
- * instant exit (0.1s, no delay) when closing.
+ * Content entrance and exit.
+ *
+ * `stagger` is a FRACTION of the panel duration, not a number of
+ * seconds: the text has to keep arriving after the shape has landed,
+ * so hard-coded delays silently became wrong the moment the expansion
+ * was retimed. Expressed as a fraction, the whole sequence rescales
+ * with --dur-panel.
+ *
+ * Exit is deliberately quick and undelayed — on the way out the text
+ * should be gone before the panel starts shrinking, or it rides the
+ * retraction down and smears.
  */
-function rise(open: boolean, delay: number): React.CSSProperties {
+/** Read a CSS custom property off :root. */
+function cssValue(name: string): string {
+  if (typeof window === "undefined") return "";
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/** A duration custom property in milliseconds, so JS and CSS agree. */
+function cssMs(name: string): number {
+  const v = cssValue(name);
+  const n = parseFloat(v);
+  if (!n) return 1500;
+  return v.endsWith("ms") ? n : n * 1000;
+}
+
+function closeMs(): number {
+  return cssMs("--dur-panel-close");
+}
+
+/** The clip that matches a tile's rect, or null when there is none. */
+function originClip(o: Origin | null): string | null {
+  if (!o || typeof window === "undefined") return null;
+  const { rect, radius } = o;
+  const right = Math.max(0, window.innerWidth - rect.right);
+  const bottom = Math.max(0, window.innerHeight - rect.bottom);
+  return `inset(${rect.top.toFixed(1)}px ${right.toFixed(1)}px ${bottom.toFixed(1)}px ${rect.left.toFixed(1)}px round ${radius})`;
+}
+
+function rise(open: boolean, stagger: number): React.CSSProperties {
+  const dur = "calc(var(--dur-panel) * 0.3)";
+  const delay = `calc(var(--dur-panel) * ${stagger})`;
   return {
     opacity: open ? 1 : 0,
     transform: open ? "none" : "translateY(14px)",
     transition: open
-      ? `opacity 0.38s var(--ease) ${delay}s, transform 0.38s var(--ease) ${delay}s`
-      : "opacity 0.1s ease-out, transform 0.1s ease-out",
+      ? `opacity ${dur} var(--ease) ${delay}, transform ${dur} var(--ease) ${delay}`
+      : "opacity calc(var(--dur-panel-close) * 0.2) ease-out, transform calc(var(--dur-panel-close) * 0.2) ease-out",
   };
 }
