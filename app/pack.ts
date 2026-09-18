@@ -126,7 +126,7 @@ export const GRID = {
 
 export type Orientation = keyof typeof GRID;
 
-/** A full-grid packing of `n` disjoint rectangles. */
+/** A full-grid packing of `n` disjoint rectangles, spatially sorted to ensure smooth transitions. */
 export function pack(n: number, seed: number, o: Orientation = "landscape"): Rect[] {
   const rand = rng(seed);
   const g = GRID[o];
@@ -134,25 +134,33 @@ export function pack(n: number, seed: number, o: Orientation = "landscape"): Rec
   // split() can only under-produce in pathological cases; pad so every
   // shape still gets a box rather than vanishing.
   while (out.length < n) out.push(out[out.length - 1]);
-  return out.slice(0, n);
+
+  const sliced = out.slice(0, n);
+  // Spatial sorting: order cells top-to-bottom, left-to-right.
+  // This ensures that when seed updates, items shift to neighboring cells
+  // rather than flying across the screen over other items.
+  sliced.sort((a, b) => {
+    if (a.r !== b.r) return a.r - b.r;
+    return a.c - b.c;
+  });
+
+  return sliced;
 }
 
 /**
  * Four independently random corner radii.
  *
- * Deliberately NOT banded per shape: letting a 50% corner sit next to a
- * sharp one is what gives each shape its own tapered, lopsided
- * character, and it is the look Rohan picked over the balanced version.
+ * Deliberately varying per shape corner to give each block its own sleek,
+ * tapered silhouette without distorting into unnatural ovals.
  */
 export function radii(seed: number, index: number): string {
   const rand = rng(seed * 7919 + index * 104729);
   const pick = () => {
     const r = rand();
-    // A spread of forms: sharp, softened, generous, fully round.
-    if (r < 0.18) return "2px";
-    if (r < 0.5) return `${(0.75 + rand() * 1.5).toFixed(2)}rem`;
-    if (r < 0.8) return `${(2 + rand() * 2.5).toFixed(2)}rem`;
-    return "50%";
+    if (r < 0.22) return "0.5rem";
+    if (r < 0.6) return `${(0.85 + rand() * 0.9).toFixed(2)}rem`;
+    if (r < 0.88) return `${(1.8 + rand() * 1.2).toFixed(2)}rem`;
+    return "2.75rem";
   };
   return `${pick()} ${pick()} ${pick()} ${pick()}`;
 }

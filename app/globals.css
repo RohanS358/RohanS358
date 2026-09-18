@@ -32,21 +32,15 @@
 }
 
 :root {
-  /* The single shared curve, lifted from the references. */
-  --ease: cubic-bezier(0.645, 0.045, 0.355, 1);
-  --dur: 0.6s;
-  /* The collage relayout: a longer, symmetric ease-in-out so shapes
-     glide into their new positions rather than darting. */
-  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
-  --dur-move: 1.4s;
-  /* The tile-to-page expansion.
-     Ease-in-out, NOT the ease-out used elsewhere: an ease-out leaves at
-     full speed, so the shape appeared to jump and then settle rather
-     than to grow. But a hard ease-in (0.65, 0) spent the first third of
-     the second barely moving, which read as a delay before a rush —
-     this gentler in-curve stays legible from the first frames. */
-  --ease-panel: cubic-bezier(0.4, 0, 0.2, 1);
-  --dur-panel: 1s;
+  /* The single shared curve for UI elements. */
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur: 0.4s;
+  /* The collage relayout: smooth fluid glide. */
+  --ease-move: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur-move: 1.2s;
+  /* The tile-to-page expansion: snappy, luxurious spring-out curve. */
+  --ease-panel: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-panel: 0.5s;
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

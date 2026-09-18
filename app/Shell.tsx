@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { PROFILE, PROJECTS, type Project } from "./content";
 import { pack, radii, GRID, type Orientation } from "./pack";
@@ -13,11 +13,10 @@ import { pack, radii, GRID, type Orientation } from "./pack";
 
    PROJECT  the shape's colour floods the screen, the name comes
             in enormous, and the case study then travels
-            HORIZONTALLY: the wheel is captured and converted to
-            travel along X. window.scrollY never moves.
+            HORIZONTALLY via lerped RAF physics. window.scrollY never moves.
 
-   Every transition uses the one shared curve (--ease/--dur), which
-   is what makes the motion read as a single gesture.
+   Every transition uses tuned ease curves (--ease/--dur), creating
+   a harmonized, premium feeling across all interactions.
    ============================================================ */
 
 const ORDER = [...PROJECTS].sort((a, b) => b.year - a.year);
@@ -37,10 +36,7 @@ const TONE: Record<string, string> = {
 };
 
 /**
- * Type colour is computed, not hand-listed. A hand-maintained "light
- * colours" set had six of eleven tones wrong, which put white text on
- * mid-tone backgrounds below WCAG AA. This measures the real contrast
- * and picks whichever of ink/paper wins.
+ * Type colour is computed to pass WCAG AA standards against any project background tone.
  */
 const REL_LUM = (hex: string) => {
   const ch = hex.replace("#", "").match(/../g)!.map((h) => {
@@ -64,14 +60,6 @@ const inkOn = (slug: string | null) => {
   return contrast(bg, PAPER) >= contrast(bg, INK) ? PAPER : INK;
 };
 
-/**
- * The mosaic. Column/row spans on a 12x6 grid, so the shapes are
- * different sizes on offset rows rather than equal bars.
- * Order matches ORDER (reverse-chronological).
- */
-
-
-/** Where an expansion starts: the tile's rect and its own corners. */
 type Origin = { rect: DOMRect; radius: string };
 
 function parseHash(): string | null {
@@ -89,10 +77,7 @@ export default function Shell() {
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
   const [seed, setSeed] = useState(1);
-  // Portrait transposes the grid instead of squeezing the landscape one
-  // into a tall box, which otherwise makes every cell a thin sliver.
   const [orient, setOrient] = useState<Orientation>("landscape");
-  // The rect the panel grows from: the tile that was actually clicked.
   const [from, setFrom] = useState<Origin | null>(null);
 
   useEffect(() => {
@@ -114,15 +99,10 @@ export default function Shell() {
     };
   }, []);
 
-  // Cycle the shapes on a slow loop. Paused when a project is open, and
-  // never started at all under prefers-reduced-motion.
+  // Cycle the shapes on a slow 2.6s loop. Paused when a project is open or hovered.
   useEffect(() => {
-    if (slug) return;
-    // Hovering holds the collage still — you cannot aim at a shape that
-    // is sliding away from the cursor.
-    if (hover) return;
+    if (slug || hover) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    // Must exceed --dur-move so a move always completes.
     const t = setInterval(() => setSeed((n) => n + 1), 2600);
     return () => clearInterval(t);
   }, [slug, hover]);
@@ -130,11 +110,12 @@ export default function Shell() {
   const open = useCallback((s: string, el?: HTMLElement) => {
     if (el) {
       const r = el.getBoundingClientRect();
-      // Carry the tile's own corner radius into the expansion. A fixed
-      // radius here made a pill-shaped tile turn into a rounded
-      // rectangle the instant it was clicked, so the growth started
-      // from a shape the reader had never seen.
       setFrom({ rect: r, radius: getComputedStyle(el).borderRadius });
+    } else {
+      const tileEl = document.querySelector(`[data-tile="${s}"]`) as HTMLElement;
+      if (tileEl) {
+        setFrom({ rect: tileEl.getBoundingClientRect(), radius: getComputedStyle(tileEl).borderRadius });
+      }
     }
     window.location.hash = `/p/${s}`;
   }, []);
@@ -149,8 +130,15 @@ export default function Shell() {
       const i = ORDER.findIndex((p) => p.slug === slug);
       if (i < 0) return;
       const n = (i + dir + ORDER.length) % ORDER.length;
-      window.history.replaceState(null, "", `#/p/${ORDER[n].slug}`);
-      setSlug(ORDER[n].slug);
+      const targetSlug = ORDER[n].slug;
+      
+      const targetEl = document.querySelector(`[data-tile="${targetSlug}"]`) as HTMLElement;
+      if (targetEl) {
+        setFrom({ rect: targetEl.getBoundingClientRect(), radius: getComputedStyle(targetEl).borderRadius });
+      }
+
+      window.history.replaceState(null, "", `#/p/${targetSlug}`);
+      setSlug(targetSlug);
     },
     [slug],
   );
@@ -166,8 +154,6 @@ export default function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [slug, close]);
 
-  // A fresh collage each tick — a gapless, disjoint packing of the grid
-  // by construction (see pack.ts, verified in pack.test.mjs).
   const boxes = pack(ORDER.length, seed, orient);
   const grid = GRID[orient];
 
@@ -178,11 +164,6 @@ export default function Shell() {
     <div
       className="fixed inset-0 overflow-hidden"
       style={{
-        // Stays paper. Flooding the root with the project colour on
-        // activation made the whole screen change colour instantly, and
-        // the panel then expanded invisibly against a background that
-        // already matched it — so the shape growing out of the tile was
-        // never actually visible. The expanding panel paints the colour.
         background: "var(--color-paper)",
       }}
     >
@@ -192,106 +173,85 @@ export default function Shell() {
         style={{
           opacity: active ? 0 : 1,
           pointerEvents: active ? "none" : undefined,
-          /* The collage must not cross-fade while the panel is growing:
-             the tile would dissolve out from under the very shape that
-             is expanding FROM it. But cutting it at the end of the
-             expansion put eleven tiles out in a single frame, which is
-             the abrupt switch.
-
-             So it fades over the LAST third of the growth, by which
-             point the panel already covers most of the screen and the
-             fade happens behind it. Opening and closing are asymmetric
-             on purpose — on the way back the collage has to be fully
-             painted before the panel finishes retracting into it. */
           transition: active
-            ? "opacity 0.34s linear 0.6s"
+            ? "opacity 0.28s linear 0.22s"
             : "opacity 0.2s linear",
         }}
         aria-hidden={Boolean(active)}
       >
-        {/* The collage: one composition, shapes touching, centred and
-            occupying roughly half the screen rather than bleeding to
-            the edges. */}
         <div
           className="relative h-[60svh] w-[min(56rem,86vw)] portrait:h-[66svh] portrait:w-[92vw]"
         >
-        {ORDER.map((p, i) => {
-          const lift = hover === p.slug;
-          const dim = hover !== null && !lift;
-          return (
-            <button
-              key={p.slug}
-              onClick={(e) => open(p.slug, e.currentTarget)}
-              onMouseEnter={() => setHover(p.slug)}
-              onMouseLeave={() => setHover(null)}
-              onFocus={() => setHover(p.slug)}
-              onBlur={() => setHover(null)}
-              tabIndex={active ? -1 : 0}
-              aria-label={`${p.name}, ${p.year}`}
-              className="absolute"
-              style={{
-                // Percentage boxes rather than grid cells: left/top/size
-                // are animatable, so the move and the corner morph run
-                // together on one curve. grid-column would snap.
-                left: `${(boxes[i].c / grid.cols) * 100}%`,
-                top: `${(boxes[i].r / grid.rows) * 100}%`,
-                width: `${(boxes[i].w / grid.cols) * 100}%`,
-                height: `${(boxes[i].h / grid.rows) * 100}%`,
-                background: TONE[p.slug],
-                // Four corners, each randomised independently.
-                borderRadius: radii(seed, i),
-                // Position + shape + fade, all on the same easing.
-                transition: [
-                  "left var(--dur-move) var(--ease-move)",
-                  "top var(--dur-move) var(--ease-move)",
-                  "width var(--dur-move) var(--ease-move)",
-                  "height var(--dur-move) var(--ease-move)",
-                  "border-radius var(--dur-move) var(--ease-move)",
-                  "opacity 0.5s var(--ease)",
-                  "transform var(--dur) var(--ease)",
-                  "box-shadow var(--dur) var(--ease)",
-                ].join(", "),
-                transform: ready
-                  ? lift
-                    ? "scale(1.04)"
-                    : "none"
-                  : "translateY(18px)",
-                // Dimmed at 0.62 rather than 0.3: the tiles still
-                // recede behind the hovered one, but the flat colours
-                // keep their punch instead of going pastel.
-                opacity: ready ? (dim ? 0.62 : 1) : 0,
-                zIndex: lift ? 2 : 1,
-                boxShadow: lift ? "0 12px 32px rgb(0 0 0 / 0.18)" : "none",
-                transitionDelay: ready ? "0ms" : `${i * 40}ms`,
-              }}
-            />
-          );
-        })}
+          {ORDER.map((p, i) => {
+            const lift = hover === p.slug;
+            const dim = hover !== null && !lift;
+            return (
+              <button
+                key={p.slug}
+                data-tile={p.slug}
+                onClick={(e) => open(p.slug, e.currentTarget)}
+                onMouseEnter={() => setHover(p.slug)}
+                onMouseLeave={() => setHover(null)}
+                onFocus={() => setHover(p.slug)}
+                onBlur={() => setHover(null)}
+                tabIndex={active ? -1 : 0}
+                aria-label={`${p.name}, ${p.year}`}
+                className="absolute cursor-pointer select-none outline-none focus-visible:ring-2 focus-visible:ring-current"
+                style={{
+                  left: `${(boxes[i].c / grid.cols) * 100}%`,
+                  top: `${(boxes[i].r / grid.rows) * 100}%`,
+                  width: `${(boxes[i].w / grid.cols) * 100}%`,
+                  height: `${(boxes[i].h / grid.rows) * 100}%`,
+                  background: TONE[p.slug],
+                  borderRadius: radii(seed, i),
+                  transition: [
+                    "left var(--dur-move) var(--ease-move)",
+                    "top var(--dur-move) var(--ease-move)",
+                    "width var(--dur-move) var(--ease-move)",
+                    "height var(--dur-move) var(--ease-move)",
+                    "border-radius var(--dur-move) var(--ease-move)",
+                    "opacity 0.4s var(--ease)",
+                    "transform 0.4s var(--ease)",
+                    "box-shadow 0.4s var(--ease)",
+                  ].join(", "),
+                  transform: ready
+                    ? lift
+                      ? "scale(1.035)"
+                      : "none"
+                    : "translateY(16px)",
+                  opacity: ready ? (dim ? 0.62 : 1) : 0,
+                  zIndex: lift ? 2 : 1,
+                  boxShadow: lift ? "0 14px 36px rgb(0 0 0 / 0.22)" : "none",
+                  transitionDelay: ready ? "0ms" : `${i * 35}ms`,
+                }}
+              />
+            );
+          })}
         </div>
       </div>
 
-      {/* ---------- HOME chrome: name + caption ---------- */}
+      {/* ---------- HOME chrome: header + caption ---------- */}
       <div
         className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7"
         style={{
           opacity: active ? 0 : 1,
-          transition: "opacity 0.5s var(--ease)",
+          transition: "opacity 0.4s var(--ease)",
         }}
       >
         <div className="flex items-start justify-between">
-          <div className="pointer-events-auto rounded-full bg-paper/85 px-3 py-1.5 backdrop-blur-sm">
+          <div className="pointer-events-auto rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md">
             <span className="t-small font-medium">{PROFILE.name}</span>
           </div>
           <a
             href={`mailto:${PROFILE.email}`}
-            className="pointer-events-auto rounded-full bg-paper/85 px-3 py-1.5 backdrop-blur-sm"
+            className="pointer-events-auto rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md transition-transform hover:scale-105"
             tabIndex={active ? -1 : 0}
           >
             <span className="t-small link">Contact</span>
           </a>
         </div>
 
-        <div className="pointer-events-auto self-start rounded-full bg-paper/85 px-3 py-1.5 backdrop-blur-sm">
+        <div className="pointer-events-auto self-start rounded-full bg-paper/85 px-3.5 py-1.5 shadow-sm backdrop-blur-md">
           <p className="t-small" aria-live="polite">
             {hovered ? (
               <>
@@ -312,13 +272,8 @@ export default function Shell() {
       </div>
 
       {/* ---------- PROJECT views ---------- */}
-      {ORDER.map((p) => (
+      {ORDER.map((p, idx) => (
         <ProjectView
-          /* Stable key. Including `active` here changed the key on
-             every open and close, so React unmounted the panel and
-             mounted a fresh one — which destroyed the state driving the
-             retraction, and the panel vanished instead of shrinking
-             back into its tile. */
           key={p.slug}
           p={p}
           active={slug === p.slug}
@@ -326,6 +281,8 @@ export default function Shell() {
           from={from}
           onClose={close}
           onStep={step}
+          projectIndex={idx}
+          totalProjects={ORDER.length}
         />
       ))}
     </div>
@@ -333,9 +290,9 @@ export default function Shell() {
 }
 
 /**
- * A project: colour fills the screen, the name arrives enormous, and the
- * case study travels horizontally. The wheel is captured and converted
- * into X travel so the document itself still never scrolls.
+ * ProjectView: full-screen case study that expands from the clicked tile
+ * and retracts seamlessly back to it on close. Rail horizontal movement is
+ * powered by a smooth lerp RAF loop with touch velocity inertia.
  */
 function ProjectView({
   p,
@@ -344,6 +301,8 @@ function ProjectView({
   from,
   onClose,
   onStep,
+  projectIndex,
+  totalProjects,
 }: {
   p: Project;
   active: boolean;
@@ -351,220 +310,336 @@ function ProjectView({
   from: Origin | null;
   onClose: () => void;
   onStep: (d: 1 | -1) => void;
+  projectIndex: number;
+  totalProjects: number;
 }) {
-  const [x, setX] = useState(0);
-  // Flips one frame after activation so the expansion has a start rect
-  // to animate FROM — setting it in the same frame jumps to the end.
-  const [opened, setOpen] = useState(false);
-  // Never 'open' while inactive, so a close always has a rect to
-  // retract INTO rather than leaving the panel stuck full-screen.
-  const open = active && opened;
-  /* True while this panel is retracting: it is no longer active, but it
-     WAS open a moment ago, so it must keep painting at the tile rect
-     until the animation finishes. Without this the panel jumps straight
-     to the hidden state and the close has no visible retraction. */
-  const [closing, setClosing] = useState(false);
+  const [opened, setOpened] = useState(false);
+  /* Mirrors `opened` for the lifecycle effect below, which must not
+     depend on it: that effect clears `opened`, so depending on it makes
+     the effect re-run and cancel its own teardown timer. */
+  const openedRef = useRef(false);
   useEffect(() => {
-    if (active || !opened) return;
-    // Deferred, not synchronous: this reacts to `active` going false and
-    // only needs to hold the panel painted for the length of the
-    // retraction, so a frame's delay costs nothing and keeps the effect
-    // out of the render path.
-    const on = requestAnimationFrame(() => setClosing(true));
-    const off = setTimeout(() => setClosing(false), 1040);
-    return () => {
-      cancelAnimationFrame(on);
-      clearTimeout(off);
-    };
-  }, [active, opened]);
+    openedRef.current = opened;
+  }, [opened]);
+  const [closing, setClosing] = useState(false);
+  const [liveOrigin, setLiveOrigin] = useState<Origin | null>(from);
+  const [progress, setProgress] = useState(0);
+
+  const isVisible = active || closing;
+  const isExpanded = active && opened;
+
+  const targetX = useRef(0);
+  const currentX = useRef(0);
+  const maxScroll = useRef(0);
   const railRef = useRef<HTMLDivElement>(null);
-  const maxRef = useRef(0);
+  const rafId = useRef<number | null>(null);
+
+  const isDragging = useRef(false);
+  const dragStart = useRef({ x: 0, scroll: 0, lastX: 0, velocity: 0, time: 0 });
+
+  // Handle opening and closing lifecycle
+  /* useLayoutEffect, not useEffect: the origin rect must be measured and
+     committed BEFORE the browser paints, or the panel paints one frame
+     at its previous rect and the expansion visibly starts from the
+     wrong place. */
+  useLayoutEffect(() => {
+    if (active) {
+      // Re-query the live tile: the collage reshuffles on a timer, so a
+      // rect captured at click time can be stale by the time we animate.
+      const tileEl = document.querySelector(`[data-tile="${p.slug}"]`) as HTMLElement;
+      if (tileEl) {
+        // Measuring the DOM and storing the result is the documented
+        // exception to the no-setState-in-effect rule; there is no way
+        // to read a live rect during render.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLiveOrigin({
+          rect: tileEl.getBoundingClientRect(),
+          radius: getComputedStyle(tileEl).borderRadius,
+        });
+      }
+      setClosing(false);
+      const raf = requestAnimationFrame(() => setOpened(true));
+      return () => cancelAnimationFrame(raf);
+    }
+
+    if (!openedRef.current) return;
+
+    /* Closing.
+
+       `opened` must NOT be a dependency of this effect. Clearing it
+       here re-runs the effect immediately; on that pass neither branch
+       matches, so the cleanup below tore down the teardown timer before
+       it fired and `closing` stayed true forever — which left a panel
+       painted at a tile rect on screen after every close. */
+    const tileEl = document.querySelector(
+      `[data-tile="${p.slug}"]`,
+    ) as HTMLElement | null;
+    if (tileEl) {
+      setLiveOrigin({
+        rect: tileEl.getBoundingClientRect(),
+        radius: getComputedStyle(tileEl).borderRadius,
+      });
+    }
+    setOpened(false);
+    setClosing(true);
+    const timer = setTimeout(() => setClosing(false), 520);
+    return () => clearTimeout(timer);
+  }, [active, p.slug]);
 
   const measure = useCallback(() => {
     const el = railRef.current;
     if (!el) return 0;
-    maxRef.current = Math.max(0, el.scrollWidth - window.innerWidth);
-    return maxRef.current;
+    maxScroll.current = Math.max(0, el.scrollWidth - window.innerWidth);
+    return maxScroll.current;
   }, []);
 
+  // Continuous RAF lerp physics loop for smooth 60/120fps horizontal scrolling
   useEffect(() => {
-    if (!active) return;
-    // One frame after activation, so the browser has the closed rect to
-    // animate FROM. Flipping in the same frame jumps to the end state.
-    const raf = requestAnimationFrame(() => setOpen(true));
+    if (!isVisible) return;
     measure();
 
-    const el = railRef.current;
-    if (!el) return;
+    let lastProgress = -1;
 
-    /* Vertical wheel -> horizontal travel, and past either end the
-       panel closes: pull back at the start, or keep going after the
-       last card. Overscroll is ACCUMULATED rather than acted on per
-       event, because a trackpad emits a long momentum tail after the
-       finger lifts and closing on the first of those feels like the
-       panel shut by itself. */
-    let past = 0;
-    let closing = false;
+    const loop = () => {
+      const max = maxScroll.current;
+      const dx = targetX.current - currentX.current;
+
+      if (Math.abs(dx) > 0.05) {
+        currentX.current += dx * 0.16;
+      } else {
+        currentX.current = targetX.current;
+      }
+
+      if (railRef.current) {
+        railRef.current.style.transform = `translate3d(${-currentX.current.toFixed(2)}px, 0, 0)`;
+      }
+
+      if (max > 0) {
+        const pct = Math.max(0, Math.min(1, currentX.current / max));
+        if (Math.abs(pct - lastProgress) > 0.005) {
+          lastProgress = pct;
+          setProgress(pct);
+        }
+      }
+
+      rafId.current = requestAnimationFrame(loop);
+    };
+
+    rafId.current = requestAnimationFrame(loop);
+
+    return () => {
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+    };
+  }, [isVisible, measure]);
+
+  // Event handlers for wheel, touch/pointer, and keyboard nav
+  useEffect(() => {
+    if (!active) return;
+    measure();
+
+    let overscroll = 0;
+    let isClosingTriggered = false;
+
     const onWheel = (e: WheelEvent) => {
       const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (!d) return;
+      if (!d || isClosingTriggered) return;
       e.preventDefault();
-      if (closing) return;
 
-      const max = measure();
-      setX((v) => {
-        const next = v + d;
-        const pushing = (v <= 0 && d < 0) || (v >= max && d > 0);
-        past = pushing ? past + Math.abs(d) : 0;
-        if (past > 180) {
-          closing = true;
-          onClose();
-        }
-        return Math.min(max, Math.max(0, next));
-      });
+      const max = maxScroll.current;
+      const next = targetX.current + d * 1.05;
+
+      const pushing = (targetX.current <= 0 && d < 0) || (targetX.current >= max && d > 0);
+      overscroll = pushing ? overscroll + Math.abs(d) : 0;
+
+      if (overscroll > 160) {
+        isClosingTriggered = true;
+        onClose();
+        return;
+      }
+
+      targetX.current = Math.min(max + 60, Math.max(-60, next));
     };
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight") {
         e.preventDefault();
-        setX((v) => Math.min(measure(), v + window.innerWidth * 0.7));
+        targetX.current = Math.min(measure(), targetX.current + window.innerWidth * 0.65);
       } else if (e.key === "ArrowLeft") {
         e.preventDefault();
-        setX((v) => Math.max(0, v - window.innerWidth * 0.7));
+        targetX.current = Math.max(0, targetX.current - window.innerWidth * 0.65);
       }
+    };
+
+    const onResize = () => {
+      measure();
     };
 
     window.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKey);
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", onResize);
+
     return () => {
-      cancelAnimationFrame(raf);
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", measure);
-      setOpen(false);
-      setX(0);
+      window.removeEventListener("resize", onResize);
+      targetX.current = 0;
+      currentX.current = 0;
     };
   }, [active, measure, onClose]);
 
-  // Drag to travel, for touch and trackpad users.
-  const drag = useRef<{ x: number; start: number } | null>(null);
+  // Pointer drag handling with smooth inertia
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("a, button")) return;
+    isDragging.current = true;
+    const now = performance.now();
+    dragStart.current = {
+      x: e.clientX,
+      scroll: targetX.current,
+      lastX: e.clientX,
+      velocity: 0,
+      time: now,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
 
-  /* Closed: the tile's rect as an inset from each viewport edge.
-     Open: zero inset, i.e. the whole screen. Falls back to the old
-     bottom wipe when there is no origin rect (deep link, keyboard). */
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging.current) return;
+    const now = performance.now();
+    const dt = Math.max(1, now - dragStart.current.time);
+    dragStart.current.velocity = (dragStart.current.lastX - e.clientX) / dt;
+    dragStart.current.lastX = e.clientX;
+    dragStart.current.time = now;
+
+    const delta = dragStart.current.x - e.clientX;
+    const max = maxScroll.current;
+    targetX.current = Math.min(max + 100, Math.max(-100, dragStart.current.scroll + delta));
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    if (!isDragging.current) return;
+    isDragging.current = false;
+
+    const max = maxScroll.current;
+    // Apply inertia toss
+    const inertia = dragStart.current.velocity * 180;
+    const finalTarget = targetX.current + inertia;
+
+    if (finalTarget < -100 || finalTarget > max + 100) {
+      onClose();
+    } else {
+      targetX.current = Math.min(max, Math.max(0, finalTarget));
+    }
+
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore if pointer capture already released
+    }
+  };
+
+  // Compute expansion clipPath
   const growth = (() => {
-    if (open) return "inset(0px 0px 0px 0px round 0px)";
-    // Inactive panels must be clipped fully AWAY, not parked at the
-    // tile rect: all eleven live in the DOM at once, so returning a
-    // visible rect here stacked ten coloured blocks on the collage and
-    // made the expansion look instant.
-    if ((!active && !closing) || !from)
-      return "inset(100% 0% 0% 0% round 0px)";
-    const { rect } = from;
+    if (isExpanded) return "inset(0px 0px 0px 0px round 0px)";
+    if (!isVisible || !liveOrigin) return "inset(100% 0% 0% 0% round 0px)";
+
+    const { rect, radius } = liveOrigin;
     const right = Math.max(0, window.innerWidth - rect.right);
     const bottom = Math.max(0, window.innerHeight - rect.bottom);
-    return `inset(${rect.top}px ${right}px ${bottom}px ${rect.left}px round ${from.radius})`;
+    return `inset(${rect.top.toFixed(1)}px ${right.toFixed(1)}px ${bottom.toFixed(1)}px ${rect.left.toFixed(1)}px round ${radius})`;
   })();
 
   return (
     <section
       aria-hidden={!active}
+      aria-label={`${p.name} case study`}
       className="absolute inset-0 overflow-hidden"
       style={{
         background: TONE[p.slug],
         color: fg,
-        // The panel GROWS OUT OF the clicked tile: it starts at that
-        // tile's screen rect and opens to fill the viewport, so the
-        // colour block the reader pressed becomes the page. Closing
-        // runs the same animation backwards.
         clipPath: growth,
         WebkitClipPath: growth,
         transition: "clip-path var(--dur-panel) var(--ease-panel)",
         willChange: "clip-path",
-        pointerEvents: active ? undefined : "none",
-        zIndex: active ? 30 : 10,
+        pointerEvents: active ? "auto" : "none",
+        zIndex: active ? 30 : closing ? 25 : 0,
+        visibility: isVisible ? "visible" : "hidden",
       }}
-      onPointerDown={(e) => {
-        if ((e.target as HTMLElement).closest("a,button")) return;
-        drag.current = { x: e.clientX, start: x };
-        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-      }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        const next = drag.current.start - (e.clientX - drag.current.x);
-        setX(Math.min(maxRef.current, Math.max(0, next)));
-      }}
-      onPointerUp={() => {
-        drag.current = null;
-      }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
     >
-      {/* the travelling rail */}
+      {/* ---------- Travelling Rail ---------- */}
       <div
         ref={railRef}
         className="absolute inset-y-0 left-0 flex touch-none items-center"
         style={{
-          transform: `translate3d(${-x}px,0,0)`,
-          transition: "transform var(--dur) var(--ease)",
           willChange: "transform",
         }}
       >
-        {/* 1 — the name, enormous, bleeding past the edges */}
-        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(open, 0.66)}>
+        {/* 1 — Giant Project Title */}
+        <div className="flex h-full shrink-0 items-center px-[6vw]" style={rise(isExpanded, 0.12)}>
           <h2
-            className="whitespace-nowrap font-semibold leading-[0.8] tracking-tighter"
+            className="whitespace-nowrap font-bold leading-[0.8] tracking-tighter select-none"
             style={{ fontSize: "min(42vh, 22vw)" }}
           >
             {p.name}
           </h2>
         </div>
 
-        {/* 2 — what it is */}
+        {/* 2 — Description & Project Details */}
         <div
-          className="flex h-full w-[min(88vw,30rem)] shrink-0 flex-col justify-center gap-5 px-[4vw]"
-          style={rise(open, 0.74)}
+          className="flex h-full w-[min(88vw,32rem)] shrink-0 flex-col justify-center gap-6 px-[4vw]"
+          style={rise(isExpanded, 0.18)}
         >
-          <p className="t-body" style={{ opacity: 0.92 }}>
+          <p className="t-body text-base sm:text-lg font-medium leading-relaxed" style={{ opacity: 0.94 }}>
             {p.line}
           </p>
-          <dl className="flex flex-wrap gap-x-8 gap-y-3">
+
+          <dl className="grid grid-cols-3 gap-4 border-y border-current/15 py-4">
             <div>
-              <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
-                Year
-              </dt>
-              <dd className="t-small" style={{ color: fg }}>{p.year}</dd>
+              <dt className="t-label opacity-60">Year</dt>
+              <dd className="t-small text-sm font-semibold mt-0.5">{p.year}</dd>
             </div>
             <div>
-              <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
-                Role
-              </dt>
-              <dd className="t-small" style={{ color: fg }}>{p.role}</dd>
+              <dt className="t-label opacity-60">Role</dt>
+              <dd className="t-small text-sm font-semibold mt-0.5">{p.role}</dd>
             </div>
             {p.commits ? (
               <div>
-                <dt className="t-label" style={{ color: fg, opacity: 0.55 }}>
-                  Commits
-                </dt>
-                <dd className="t-small tabular-nums" style={{ color: fg }}>
+                <dt className="t-label opacity-60">Commits</dt>
+                <dd className="t-small text-sm font-semibold tabular-nums mt-0.5">
                   {p.commits.toLocaleString()}
                 </dd>
               </div>
             ) : null}
           </dl>
-          <p className="t-label" style={{ color: fg, opacity: 0.55 }}>
-            {p.tech.join(", ")}
-          </p>
-          <div className="flex gap-6">
+
+          <div className="flex flex-wrap gap-2">
+            {p.tech.map((t) => (
+              <span
+                key={t}
+                className="t-label rounded-full bg-current/10 px-3 py-1 text-xs font-semibold backdrop-blur-sm"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4 pt-2">
             {p.live ? (
               <a
                 href={p.live}
                 target="_blank"
                 rel="noopener noreferrer"
                 tabIndex={active ? 0 : -1}
-                className="t-body link-out"
+                className="t-body inline-flex items-center gap-1.5 rounded-full bg-current/15 px-4 py-2 font-semibold transition-all hover:bg-current/25 hover:scale-105"
                 style={{ color: fg }}
               >
-                Open it live
+                <span>Open Live</span>
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M7 17L17 7M17 7H7M17 7V17" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               </a>
             ) : null}
             {p.repo ? (
@@ -573,96 +648,130 @@ function ProjectView({
                 target="_blank"
                 rel="noopener noreferrer"
                 tabIndex={active ? 0 : -1}
-                className="t-body link-out"
+                className="t-body inline-flex items-center gap-1.5 rounded-full border border-current/25 px-4 py-2 font-semibold transition-all hover:bg-current/10 hover:scale-105"
                 style={{ color: fg }}
               >
-                Source
+                <span>Source</span>
+                <svg className="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22" />
+                </svg>
               </a>
             ) : null}
           </div>
         </div>
 
-        {/* 3 — the work itself */}
-        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(open, 0.82)}>
+        {/* 3 — Screenshots & Next Project Endcap */}
+        <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isExpanded, 0.24)}>
           {p.shot ? (
-            <div className="relative h-[62vh] w-[min(80vw,34rem)] shrink-0 overflow-hidden rounded-xl bg-white/10">
+            <div className="relative h-[62vh] w-[min(80vw,36rem)] shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md">
               <Image
                 src={p.shot}
                 alt={`${p.name} interface`}
                 fill
                 sizes="80vw"
-                className="object-contain"
+                className="object-contain p-2"
+                priority={active}
               />
             </div>
           ) : (
-            <div className="grid h-[62vh] w-[min(80vw,34rem)] shrink-0 place-items-center rounded-xl border border-current/20">
-              <span className="t-label" style={{ color: fg, opacity: 0.6 }}>
-                Screenshot coming
+            <div className="grid h-[62vh] w-[min(80vw,36rem)] shrink-0 place-items-center rounded-2xl border border-dashed border-current/25 bg-current/5">
+              <span className="t-label font-medium opacity-70">
+                Interactive preview coming soon
               </span>
             </div>
           )}
 
-          {/* end cap: next project */}
+          {/* End-Cap: Next Project Card */}
           <div className="flex h-full shrink-0 flex-col justify-center px-[4vw]">
-            <p className="t-label mb-2" style={{ color: fg, opacity: 0.55 }}>
-              Next
-            </p>
+            <p className="t-label mb-3 font-semibold opacity-60">Next Project</p>
             <button
               onClick={() => onStep(1)}
               tabIndex={active ? 0 : -1}
-              className="whitespace-nowrap text-left font-semibold leading-none tracking-tight"
-              style={{ fontSize: "min(14vh, 9vw)", color: fg }}
+              className="group text-left transition-transform hover:translate-x-2"
+              style={{ color: fg }}
             >
-              {ORDER[(ORDER.findIndex((q) => q.slug === p.slug) + 1) % ORDER.length]
-                .name}
+              <div className="flex items-center gap-3">
+                <span className="whitespace-nowrap font-bold leading-none tracking-tight" style={{ fontSize: "min(14vh, 9vw)" }}>
+                  {ORDER[(projectIndex + 1) % totalProjects].name}
+                </span>
+                <div className="grid size-12 place-items-center rounded-full bg-current/15 transition-transform group-hover:scale-110">
+                  <svg className="size-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M5 12h14M12 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
             </button>
           </div>
         </div>
       </div>
 
-      {/* fixed chrome inside the project */}
-      <div className="pointer-events-none absolute inset-0 z-10 flex flex-col justify-between p-5 sm:p-7">
-        <div className="flex items-start justify-between">
-          <span className="t-small font-medium" style={{ color: fg }}>
-            {p.name}
-          </span>
+      {/* ---------- Header & Chrome ---------- */}
+      <div className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between p-5 sm:p-7">
+        {/* Top Floating Header Bar */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-current/10 px-4 py-2 backdrop-blur-md">
+            <span className="t-small font-semibold" style={{ color: fg }}>
+              {p.name}
+            </span>
+            <span className="t-label text-xs opacity-50" style={{ color: fg }}>
+              {String(projectIndex + 1).padStart(2, "0")} / {String(totalProjects).padStart(2, "0")}
+            </span>
+          </div>
+
+          {/* Progress Indicator */}
+          <div className="hidden sm:flex mx-4 h-1 max-w-xs flex-1 overflow-hidden rounded-full bg-current/15">
+            <div
+              className="h-full bg-current transition-all duration-75"
+              style={{ width: `${(progress * 100).toFixed(1)}%` }}
+            />
+          </div>
+
+          {/* Touch-Friendly Close Button */}
           <button
             onClick={onClose}
             tabIndex={active ? 0 : -1}
-            aria-label="Back to home"
-            className="pointer-events-auto grid size-8 place-items-center"
+            aria-label="Close project case study (Escape)"
+            className="pointer-events-auto flex items-center gap-2 rounded-full bg-current/10 px-4 py-2 font-semibold backdrop-blur-md transition-all hover:bg-current/25 hover:scale-105"
             style={{ color: fg }}
           >
-            <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+            <span className="text-xs font-semibold">Close</span>
+            <kbd className="hidden sm:inline-block rounded bg-current/20 px-1.5 py-0.5 text-[10px] font-mono opacity-70">
+              Esc
+            </kbd>
+            <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
               <path
-                d="M5 5 L19 19 M19 5 L5 19"
+                d="M18 6L6 18M6 6l12 12"
                 stroke="currentColor"
-                strokeWidth="1.6"
-                fill="none"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </svg>
           </button>
         </div>
 
-        <p className="t-label" style={{ color: fg, opacity: 0.5 }}>
-          scroll sideways — keep going to close
-        </p>
+        {/* Bottom Hint */}
+        <div className="pointer-events-none self-start rounded-full bg-current/10 px-3.5 py-1.5 backdrop-blur-md">
+          <p className="t-label text-xs opacity-60" style={{ color: fg }}>
+            scroll or drag sideways — pull past edge to close
+          </p>
+        </div>
       </div>
     </section>
   );
 }
 
 /**
- * Content rises in after the colour has landed.
- *
- * Staggered by section so the case study assembles rather than
- * appearing all at once — the panel expansion reads as the gesture,
- * and the text follows it in.
+ * Content entrance & exit animation style generator.
+ * Fast entrance (0.4s) with staggered delay when opening,
+ * instant exit (0.12s, no delay) when closing.
  */
 function rise(open: boolean, delay: number): React.CSSProperties {
   return {
     opacity: open ? 1 : 0,
-    transform: open ? "none" : "translateY(22px)",
-    transition: `opacity 0.5s var(--ease) ${delay}s, transform 0.5s var(--ease) ${delay}s`,
+    transform: open ? "none" : "translateY(18px)",
+    transition: open
+      ? `opacity 0.4s var(--ease) ${delay}s, transform 0.4s var(--ease) ${delay}s`
+      : "opacity 0.12s ease-out, transform 0.12s ease-out",
   };
 }
