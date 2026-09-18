@@ -115,81 +115,10 @@ export const ROWS = 6;
 export function pack(n: number, seed: number): Rect[] {
   const rand = rng(seed);
   const out = split({ c: 0, r: 0, w: COLS, h: ROWS }, n, rand);
-  // Hero first: the largest leaf goes to index 0, so the composition
-  // has an anchor instead of uniform lumps. Reordering leaves cannot
-  // break disjointness — it is the same set of rectangles.
-  const big = out.reduce((best, r, i) => (r.w * r.h > out[best].w * out[best].h ? i : best), 0);
-  if (out.length) [out[0], out[big]] = [out[big], out[0]];
   // split() can only under-produce in pathological cases; pad so every
   // shape still gets a box rather than vanishing.
   while (out.length < n) out.push(out[out.length - 1]);
   return out.slice(0, n);
-}
-
-/**
- * Expressive silhouettes, driven by scroll.
- *
- * `border-radius` can only ever round a rectangle. clip-path can cut
- * it: chamfers, slants, arches, notches. The catch is that clip-path
- * only INTERPOLATES between paths of the same family with the same
- * number of points — polygon->inset, or 4 points->6 points, snaps.
- * So a shape picks its family once from its seed and keeps it; only
- * the numbers inside move as you scroll. That is what makes the morph
- * read as one continuous deformation rather than a flicker.
- *
- * `p` is scroll progress, wrapped to 0..1.
- */
-const FAMILIES = ["slant", "arch", "chamfer", "pill", "notch"] as const;
-export type Family = (typeof FAMILIES)[number];
-
-export function family(index: number): Family {
-  return FAMILIES[index % FAMILIES.length];
-}
-
-export function shapePath(seed: number, index: number, p: number): string {
-  // Each shape reads the same scroll at its own phase, so the
-  // composition breathes instead of pulsing in unison.
-  const phase = Math.sin(p * Math.PI * 2 + index * 1.1);
-  const bias = ((seed * 7919 + index * 104729) % 1000) / 1000;
-
-  switch (family(index)) {
-    case "slant": {
-      // 3..17. The boxes are packed gapless, so every cut opens a gap
-      // against the neighbour — past ~20% the collage stops reading as
-      // one composition and becomes floating slivers.
-      const o = 3 + bias * 6 + Math.abs(phase) * 8;
-      return `polygon(${o}% 0%, 100% 0%, ${100 - o}% 100%, 0% 100%)`;
-    }
-    case "arch": {
-      // Both top corners swing from near-square to near-round, staying
-      // inside 0..50 by range rather than by clamping, so the swing
-      // never stalls at either end. Range: 24 ± 22 -> 2..46.
-      // bias shifts the centre a little so two arches differ; the swing
-      // shrinks to match, keeping the total inside 2..46.
-      const mid = 20 + bias * 8;
-      const r = mid + phase * (Math.min(mid, 46 - mid) - 2);
-      return `inset(0% 0% 0% 0% round ${r.toFixed(1)}% ${r.toFixed(1)}% 0% 0%)`;
-    }
-    case "chamfer": {
-      // Centres chosen so the swing never needs clamping — a clamp
-      // would stall the corner at the extremes instead of morphing it.
-      const a = 10 + bias * 4 + phase * 6;
-      const b = 12 + bias * 4 - phase * 7;
-      return `polygon(${a}% 0%, 100% 0%, 100% ${100 - b}%, ${100 - a}% 100%, 0% 100%, 0% ${b}%)`;
-    }
-    case "pill": {
-      // Kept strictly under 50%. Clamping there instead would make the
-      // shape sit still at the extremes; scaling the range keeps it
-      // moving for the whole cycle. Max: 12 + 12 + 24 = 48.
-      const r = 12 + bias * 12 + Math.abs(phase) * 24;
-      return `inset(0% 0% 0% 0% round ${r.toFixed(1)}%)`;
-    }
-    default: {
-      // 4..20, same reason as the slant: a deep notch tears the collage.
-      const n = 12 + bias * 4 - phase * 7;
-      return `polygon(0% 0%, ${100 - n}% 0%, 100% ${n}%, 100% 100%, 0% 100%)`;
-    }
-  }
 }
 
 /**

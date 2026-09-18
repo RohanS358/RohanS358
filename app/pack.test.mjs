@@ -51,44 +51,4 @@ if (new Set(Array.from({ length: 60 }, (_, i) => radii(i, i))).size < 30) {
 console.log(fail
   ? `${fail} FAILURE(S)`
   : `PASS — ${N} shapes over 300 layouts: full-grid packing, no overlaps, no holes, in bounds; 4 independent corners`);
-
-/* The scroll-driven silhouettes must stay valid shapes at EVERY point
-   of the scroll cycle. A percentage that runs past its neighbour makes
-   a polygon self-intersect (the shape visibly turns inside out), and a
-   negative inset radius is dropped entirely (the morph snaps). Sweep
-   the whole 0..1 cycle rather than spot-checking p=0. */
-{
-  const { shapePath, family } = await import('./pack.ts');
-  let bad = 0;
-  for (let i = 0; i < 40; i++) {
-    for (let step = 0; step <= 100; step++) {
-      const p = step / 100;
-      const path = shapePath(7, i, p);
-      const nums = [...path.matchAll(/-?\d+(\.\d+)?(?=%)/g)].map((m) => Number(m[0]));
-      if (!nums.length) { console.log('no numbers in', path); bad++; continue; }
-      if (nums.some((v) => v < 0 || v > 100)) {
-        console.log(`shape ${i} (${family(i)}) at p=${p}: out of range`, path); bad++;
-      }
-      // Shapes that cut BOTH sides must leave a body between the cuts.
-      const fam = family(i);
-      if ((fam === 'slant' || fam === 'chamfer') && nums.some((v) => v > 45)) {
-        // the cut offsets are the small values; a cut past the midline
-        // would cross its opposite edge.
-        const cuts = nums.filter((v) => v < 50);
-        if (cuts.some((v) => v >= 50)) { console.log(`shape ${i}: cut crosses midline`); bad++; }
-      }
-      if (fam === 'arch' || fam === 'pill') {
-        const r = nums.filter((v) => v > 0);
-        if (r.some((v) => v > 50)) { console.log(`shape ${i} (${fam}) at p=${p}: radius > 50%`, path); bad++; }
-      }
-    }
-  }
-  // Every family must actually be reachable, or the switch is dead code.
-  const seen = new Set(Array.from({ length: 20 }, (_, i) => family(i)));
-  if (seen.size !== 5) { console.log('families reachable:', [...seen]); bad++; }
-
-  console.log(bad ? `${bad} SHAPE FAILURE(S)` : 'PASS — 5 families, 40 shapes x 101 scroll steps: all clip-paths in range');
-  fail += bad;
-}
-
 process.exit(fail ? 1 : 0);
