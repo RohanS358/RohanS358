@@ -718,9 +718,14 @@ function ProjectView({
         color: fg,
         clipPath: growth,
         WebkitClipPath: growth,
+        /* No CSS transition while opening: WAAPI drives that, and
+           leaving one declared meant React setting clipPath to the tile
+           rect ALSO started a CSSTransition on the same property. Both
+           ran at once and the expansion visibly played twice. Closing
+           is still CSS, which is why it keeps its transition. */
         transition: isClosing
           ? "clip-path var(--dur-panel-close) var(--ease-panel-close)"
-          : "clip-path var(--dur-panel) var(--ease-panel)",
+          : "none",
         willChange: "clip-path",
         pointerEvents: active ? "auto" : "none",
         zIndex: active ? 30 : isClosing ? 25 : 0,
