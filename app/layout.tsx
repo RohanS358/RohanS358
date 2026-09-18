@@ -2,16 +2,13 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { PROFILE } from "./content";
+import { Figtree } from "next/font/google";
+import { cn } from "@/lib/utils";
 
 /* Rethink Sans — everything structural: headers and body.
    Spectral Bold — subtitles and supporting information. */
 
-const rethink = localFont({
-  src: "./fonts/RethinkSans-VariableFont_wght.ttf",
-  variable: "--font-sans-ui",
-  display: "swap",
-  weight: "400 800",
-});
+const figtree = Figtree({subsets:['latin'],variable:'--font-sans'});
 
 const spectral = localFont({
   src: [
@@ -36,7 +33,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${rethink.variable} ${spectral.variable} h-full`}
+      className={cn("h-full", spectral.variable, "font-sans", figtree.variable)}
     >
       <body className="min-h-full">
         <a

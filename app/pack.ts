@@ -111,10 +111,26 @@ function splitEven(rect: Rect, n: number): Rect[] {
 export const COLS = 12;
 export const ROWS = 6;
 
+/**
+ * Grid shape per orientation.
+ *
+ * A phone is tall, so the landscape 12x6 grid squeezed into it turns
+ * every cell into a thin vertical sliver. Portrait transposes the grid
+ * instead of scaling it, which keeps cells roughly square at any
+ * screen shape.
+ */
+export const GRID = {
+  landscape: { cols: 12, rows: 6 },
+  portrait: { cols: 6, rows: 12 },
+} as const;
+
+export type Orientation = keyof typeof GRID;
+
 /** A full-grid packing of `n` disjoint rectangles. */
-export function pack(n: number, seed: number): Rect[] {
+export function pack(n: number, seed: number, o: Orientation = "landscape"): Rect[] {
   const rand = rng(seed);
-  const out = split({ c: 0, r: 0, w: COLS, h: ROWS }, n, rand);
+  const g = GRID[o];
+  const out = split({ c: 0, r: 0, w: g.cols, h: g.rows }, n, rand);
   // split() can only under-produce in pathological cases; pad so every
   // shape still gets a box rather than vanishing.
   while (out.length < n) out.push(out[out.length - 1]);
