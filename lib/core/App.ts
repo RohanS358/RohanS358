@@ -132,12 +132,17 @@ export class App extends Component {
     this.page.create();
     this.page.onResize();
 
-    /* Project transitions are a handoff — the outgoing page animates its
-       tile INTO the incoming one, so it has to finish first. Everything
-       else crossfades, which reads better overlapped. */
-    if (template === "project" || this.template === "project") {
+    /* Opening a project is a handoff, not a crossfade: the tile-grow
+       lives in Home.hide(), and Project.show() must not cut in until
+       that has fully finished, or the project page appears over a tile
+       still mid-flight. Closing runs the opposite way — the shrink-back
+       lives in Home.show(), so it is Project.hide() (the fading
+       background) that needs to overlap it, not wait behind it. */
+    if (template === "project") {
       await previous.hide(this.page);
       await this.page.show(previous);
+    } else if (this.template === "project") {
+      await Promise.all([previous.hide(this.page), this.page.show(previous)]);
     } else {
       void this.page.show(previous);
       await previous.hide(this.page);

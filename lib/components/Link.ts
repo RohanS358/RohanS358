@@ -15,10 +15,15 @@ export class Link extends Component {
     super({ element });
   }
 
-  private onClick = (e: Event) => {
+  /* A regular method, not a field arrow function: `addEventListeners`
+     below runs from the base constructor, before this class's own field
+     initializers have had a turn — a field here would still be
+     `undefined` when `listen()` reaches for it. `bindMethods()` binds
+     prototype methods ahead of that, which is what makes this safe. */
+  private onClick(e: Event) {
     e.preventDefault();
     this.emitter.emit("click", (this.element as HTMLAnchorElement).href);
-  };
+  }
 
   addEventListeners() {
     const el = this.element as HTMLAnchorElement;

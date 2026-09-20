@@ -449,14 +449,29 @@ body {
   width: 100%;
 }
 
+/* Set exactly like `.project__header__title` — same font-size, same
+   weight, same offset from the viewport edge — so the tile's hover
+   text sits at the same place and scale the project page's title
+   lands on. Growing the tile to fullscreen then just uncrops the same
+   text instead of a different-scaled one swapping in underneath it. */
 .home__media__media {
   display: block;
-  height: 100vh;
-  object-fit: cover;
+  font-size: 18rem;
+  font-weight: 700;
+  left: 10rem;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
   opacity: 0;
   pointer-events: none;
   position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   transition: opacity 0.4s ease;
+  white-space: nowrap;
+}
+
+@media (max-width: 768px) {
+  .home__media__media { font-size: 5rem; left: 2rem; }
 }
 
 .home__media__element:hover .home__media__media {
@@ -660,9 +675,14 @@ body {
 .project__close__icon {
   display: block;
   height: 2.8rem;
+  opacity: 0.5;
   position: relative;
+  transition: opacity 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
   width: 2.8rem;
+  z-index: 1;
 }
+
+.project__close__icon:hover { opacity: 0.5; }
 
 .project__close__icon:before,
 .project__close__icon:after {
@@ -741,12 +761,17 @@ body {
   white-space: normal;
 }
 
+.project__sections__section:last-child { width: 100vw; }
+
 .project__sections__section__wrapper {
   align-items: center;
   display: flex;
   height: 100%;
-  justify-content: center;
   width: 100%;
+}
+
+.project__sections__section:not(:last-child) .project__sections__section__wrapper {
+  justify-content: center;
 }
 
 .project__sections__content {
@@ -802,11 +827,35 @@ body {
 }
 
 .project__sections__media {
-  align-items: center;
+  align-items: flex-end;
   display: flex;
-  height: 100%;
+  height: fit-content;
   justify-content: center;
   padding: 10rem;
+}
+
+.project__sections__section:last-child .project__sections__media {
+  justify-content: flex-start;
+}
+
+.project__sections__media__wrapper {
+  align-items: flex-end;
+  display: flex;
+  justify-content: space-between;
+}
+
+.project__sections__media__description {
+  font-size: 2.4rem;
+  line-height: 1.2;
+  margin-right: 14.5rem;
+  width: 28rem;
+}
+
+@media (max-width: 768px) {
+  .project__sections__media__description {
+    font-size: 1.4rem;
+    margin-right: 0;
+  }
 }
 
 .project__sections__media__gallery {
@@ -870,7 +919,14 @@ body {
   .project__sections__content { padding: 2rem; }
   .project__sections__content__description h1 { font-size: 3.4rem; width: 28rem; }
   .project__sections__content__description p { font-size: 1.5rem; width: 28rem; }
-  .project__sections__media { padding: 2rem; }
+  .project__sections__media {
+    align-items: flex-start;
+    flex-direction: column;
+    height: auto;
+    min-height: var(--100vh);
+    padding: 2rem;
+  }
+  .project__sections__section:last-child .project__sections__media { justify-content: center; }
   .project__sections__media__gallery { height: auto; width: 100%; }
   .project__sections__media__item { height: auto; }
   .project__sections__media__item__image { position: static; }
@@ -889,6 +945,7 @@ body {
 .project__button {
   cursor: none;
   display: block;
+  fill: #fff;
   height: 100%;
   mix-blend-mode: difference;
   opacity: 0.5;

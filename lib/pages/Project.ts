@@ -119,7 +119,12 @@ export class Project extends Page {
   async hide(next?: Page | null) {
     const timeline = gsap.timeline();
     const fading = [this.one("close"), this.one("content")].filter(Boolean);
-    timeline.to(fading, { autoAlpha: 0, duration: 0.4 });
+    timeline.to(fading, { autoAlpha: 0, duration: 0.4 }, 0);
+    /* The flat tone background fades separately, and slower: it is
+       what the reader sees for the whole return trip while the tile it
+       is becoming shrinks into place underneath, so cutting it at 0.4s
+       would leave a bare gap before the mosaic settles. */
+    timeline.to(this.element, { autoAlpha: 0, duration: 1 }, 0);
     return super.hide(next, timeline);
   }
 

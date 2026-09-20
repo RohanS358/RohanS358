@@ -45,7 +45,14 @@ export class Home extends Page {
   }
 
   async show(previous?: Page | null) {
+    /* `openingId` was set by `onOpen` when this same instance was last
+       hidden, and survives the round trip through Project because Home
+       is created once and reused — it names the tile to shrink back
+       into, not whatever `previous` happens to be. Read it before
+       clearing it: this call IS the return trip that consumes it. */
+    const incomingId = this.openingId;
     this.openingId = null;
+
     /* Suppress the per-block CSS transition for the length of the
        entrance: the blocks are being placed by GSAP here, and leaving
        the transition on means every tween fights a CSS animation of the
@@ -54,7 +61,6 @@ export class Home extends Page {
 
     await this.randomize();
 
-    const incomingId = (previous as unknown as { openingId?: string })?.openingId ?? null;
     const timeline = gsap.timeline({
       onComplete: () => this.element.classList.remove(this.classes.animating),
     });
@@ -158,24 +164,14 @@ export class Home extends Page {
           0,
         );
 
-        const image = el.firstElementChild;
-        if (image) {
-          timeline.set(image, { autoAlpha: 1, transition: "none" }, 0);
-          timeline.to(
-            image,
-            {
-              autoAlpha: 1,
-              duration: 1,
-              ease: EASE,
-              height: window.innerHeight * 0.9,
-              marginLeft: 0,
-              marginTop: 0,
-              x: window.innerWidth <= 768 ? "2rem" : "10rem",
-              y: window.innerHeight * 0.05,
-            },
-            0,
-          );
-        }
+        /* The title text is already sized and positioned to match
+           `.project__header__title` (see `.home__media__media` in
+           globals.css) — it doesn't need its own tween. Growing the
+           tile above is what reveals more of it; showing it here is
+           only for the sliver of a frame before the tile's grow starts
+           painting, so the reader never sees it clipped mid-tile. */
+        const label = el.firstElementChild;
+        if (label) timeline.set(label, { autoAlpha: 1, transition: "none" }, 0);
       } else {
         timeline.to(
           el,

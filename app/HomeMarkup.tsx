@@ -23,6 +23,11 @@ const TONE: Record<string, string> = {
   hackforbusiness: "#D1493F",
 };
 
+/* Dark tones need light type — the same set `ProjectMarkup` uses, so
+   the title reads in the same colour on the tile as it will once the
+   tile becomes the project page. */
+const LIGHT_ON = new Set(["saul", "rover", "refill", "rotary", "fraud", "bijulibatti"]);
+
 const ORDER = [...PROJECTS].sort((a, b) => b.year - a.year);
 
 export default function HomeMarkup() {
@@ -43,10 +48,17 @@ export default function HomeMarkup() {
               data-tone={p.slug}
               aria-label={`${p.name}, ${p.year}`}
             >
-              {p.shot ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img className="home__media__media" src={p.shot} alt="" aria-hidden />
-              ) : null}
+              {/* Same text, same size, same place as
+                  `.project__header__title` — so opening reads as this
+                  exact title getting uncropped, not a different visual
+                  swapping in underneath it. */}
+              <span
+                className="home__media__media"
+                style={{ color: LIGHT_ON.has(p.slug) ? "#fff" : "#0a0a0a" }}
+                aria-hidden
+              >
+                {p.name}
+              </span>
             </a>
           ))}
         </div>
