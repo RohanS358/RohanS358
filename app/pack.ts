@@ -1,115 +1,40 @@
 /**
- * Random collage layouts that cannot overlap.
+ * Authored collage layouts.
  *
- * Rather than placing shapes at random and hoping they miss each other,
- * we RECURSIVELY SPLIT the grid: a rectangle is cut into two, each half
- * is cut again, until there is one leaf per shape. Leaves of a binary
- * space partition are disjoint and cover the whole area by construction,
- * so "nothing overlaps" is a property of the algorithm, not a check that
- * might miss a case.
+ * This used to split the grid at random and hope the result composed.
+ * It mostly did not: with a new throw every few seconds, no two ticks
+ * were related and most landed on shapes nobody would have drawn on
+ * purpose — slivers, lopsided towers, a different accident each time.
  *
- * Every shape also gets its own randomised corner radii, four corners
- * independently, so no two shapes share a silhouette.
+ * The cast is fixed at 11 shapes, so the layouts are placed by hand
+ * instead, and edited in the browser at /studio rather than typed here.
+ *
+ * Shapes are FREE: they may overlap, sit at fractional positions, and
+ * hang past the edge of the grid. Earlier versions kept a strict tiling
+ * and derived corners from the box, which held the composition together
+ * but left nothing to compose WITH. A shape now carries its own
+ * rectangle and, optionally, its own corner radius.
  */
 
+/** A shape's placement, in grid units. Fractional and unbounded. */
 export type Rect = { c: number; r: number; w: number; h: number };
 
-/** Deterministic PRNG so a given seed always yields the same layout. */
-function rng(seed: number) {
-  let s = seed >>> 0 || 1;
-  return () => {
-    // xorshift32
-    s ^= s << 13;
-    s ^= s >>> 17;
-    s ^= s << 5;
-    return ((s >>> 0) % 100000) / 100000;
-  };
-}
-
 /**
- * Split `rect` into exactly `n` disjoint rectangles.
- * Guarantees: every output is inside `rect`, no two outputs overlap,
- * and every cell of `rect` belongs to exactly one output.
+ * One shape in one composition: where it sits, and how its corners are
+ * cut. `radius` is any CSS border-radius; when absent the composition's
+ * phase decides, which is what keeps a whole arrangement coherent
+ * unless a shape is deliberately singled out.
  */
-function split(rect: Rect, n: number, rand: () => number): Rect[] {
-  if (n <= 1) return [rect];
+export type Shape = Rect & { radius?: string };
 
-  // Give each side a share proportional to a random-ish balance, but
-  // never so lopsided that a piece has no room for its shapes.
-  const left = Math.max(1, Math.min(n - 1, Math.round(n * (0.35 + rand() * 0.3))));
-  const right = n - left;
-
-  // Cut along whichever axis has room; prefer the longer side so pieces
-  // stay reasonably square.
-  const canV = rect.w >= 2;
-  const canH = rect.h >= 2;
-  const vertical = canV && (!canH || (rect.w >= rect.h ? rand() < 0.8 : rand() < 0.3));
-
-  if (vertical) {
-    // Each side needs at least 1 column per shape it will hold.
-    const min = Math.max(1, left);
-    const max = Math.min(rect.w - 1, rect.w - right);
-    if (max < min) return splitEven(rect, n);
-    const cut = min + Math.floor(rand() * (max - min + 1));
-    return [
-      ...split({ ...rect, w: cut }, left, rand),
-      ...split({ ...rect, c: rect.c + cut, w: rect.w - cut }, right, rand),
-    ];
-  }
-
-  const min = Math.max(1, left);
-  const max = Math.min(rect.h - 1, rect.h - right);
-  if (max < min) return splitEven(rect, n);
-  const cut = min + Math.floor(rand() * (max - min + 1));
-  return [
-    ...split({ ...rect, h: cut }, left, rand),
-    ...split({ ...rect, r: rect.r + cut, h: rect.h - cut }, right, rand),
-  ];
-}
-
-/** Fallback when a rectangle is too small to cut randomly: slice evenly. */
-function splitEven(rect: Rect, n: number): Rect[] {
-  const along = rect.w >= rect.h ? "w" : "h";
-  const total = rect[along];
-  // Not enough room to give everyone a cell — split the other way.
-  if (total < n) {
-    const other = along === "w" ? "h" : "w";
-    if (rect[other] >= n) {
-      const out: Rect[] = [];
-      const size = Math.floor(rect[other] / n);
-      for (let i = 0; i < n; i++) {
-        const isLast = i === n - 1;
-        const off = i * size;
-        const len = isLast ? rect[other] - off : size;
-        out.push(
-          other === "w"
-            ? { ...rect, c: rect.c + off, w: len }
-            : { ...rect, r: rect.r + off, h: len },
-        );
-      }
-      return out;
-    }
-    // Genuinely cannot fit; return what we can rather than overlapping.
-    return [rect];
-  }
-
-  const out: Rect[] = [];
-  const size = Math.floor(total / n);
-  for (let i = 0; i < n; i++) {
-    const isLast = i === n - 1;
-    const off = i * size;
-    const len = isLast ? total - off : size;
-    out.push(
-      along === "w"
-        ? { ...rect, c: rect.c + off, w: len }
-        : { ...rect, r: rect.r + off, h: len },
-    );
-  }
-  return out;
-}
-
-export const COLS = 12;
-export const ROWS = 6;
+export type Composition = {
+  name: string;
+  note: string;
+  /** Eleven shapes, in the order projects are handed out. */
+  shapes: Shape[];
+  /** The silhouette worn by shapes that do not override it. */
+  phase: Phase;
+};
 
 /**
  * Grid shape per orientation.
@@ -118,6 +43,9 @@ export const ROWS = 6;
  * every cell into a thin vertical sliver. Portrait transposes the grid
  * instead of scaling it, which keeps cells roughly square at any
  * screen shape.
+ *
+ * The grid is now only a COORDINATE SYSTEM — shapes are not required to
+ * stay inside it, and a composition may deliberately bleed off an edge.
  */
 export const GRID = {
   landscape: { cols: 12, rows: 6 },
@@ -126,121 +54,312 @@ export const GRID = {
 
 export type Orientation = keyof typeof GRID;
 
-/** A full-grid packing of `n` disjoint rectangles, spatially sorted to ensure smooth transitions. */
-export function pack(n: number, seed: number, o: Orientation = "landscape"): Rect[] {
-  const rand = rng(seed);
-  const g = GRID[o];
-  const out = split({ c: 0, r: 0, w: g.cols, h: g.rows }, n, rand);
-  // split() can only under-produce in pathological cases; pad so every
-  // shape still gets a box rather than vanishing.
-  while (out.length < n) out.push(out[out.length - 1]);
-
-  const sliced = out.slice(0, n);
-  // Spatial sorting: order cells top-to-bottom, left-to-right.
-  // This ensures that when seed updates, items shift to neighboring cells
-  // rather than flying across the screen over other items.
-  sliced.sort((a, b) => {
-    if (a.r !== b.r) return a.r - b.r;
-    return a.c - b.c;
-  });
-
-  return sliced;
-}
-
 /**
- * Corner-radius phases.
+ * Silhouette phases.
  *
- * The reference composition holds its layout still and cycles the
- * SILHOUETTES: square, then one rounded shoulder, then full circles,
- * then capsules. Reading it as four phases of one grid — rather than
- * four different layouts — is what keeps it legible; the eye tracks a
- * block changing shape instead of re-finding it somewhere new.
- *
- * Each phase returns a border-radius for one tile. `index` lets a phase
- * vary per tile (which shoulder is rounded) while staying deterministic.
+ * A phase is the default corner treatment for a whole composition, so
+ * an arrangement reads as one piece. Individual shapes override it via
+ * `radius` when a composition wants one block to behave differently.
  */
 export type Phase = "square" | "shoulder" | "round" | "capsule";
 
 export const PHASES: Phase[] = ["square", "shoulder", "round", "capsule"];
 
-export function radii(phase: Phase, index: number): string {
+/**
+ * The border-radius a shape wears.
+ *
+ * Its own `radius` wins; otherwise the composition's phase decides,
+ * read off the shape's BOX rather than its index in the array. Rotating
+ * corners by array position was arbitrary — it made the field look
+ * speckled, because the shape a block wore had nothing to do with where
+ * it sat or how big it was.
+ */
+export function radii(phase: Phase, box: Rect, grid: { cols: number; rows: number }): string {
   switch (phase) {
     case "square":
       return "0px";
+
     case "shoulder": {
-      // Rotate which corner carries the arch so the row does not read
-      // as one shape stamped repeatedly.
-      const r = "45%";
-      switch (index % 4) {
-        case 0: return `${r} 0px 0px 0px`;
-        case 1: return `0px ${r} 0px 0px`;
-        case 2: return `0px 0px ${r} 0px`;
-        default: return `0px 0px 0px ${r}`;
-      }
+      /* One arched corner per shape, facing OUT of the composition: a
+         block in the top-left arches top-left, so the four corners of
+         the field bloom outward together. */
+      const left = (box.c + box.w / 2) / grid.cols < 0.5;
+      const top = (box.r + box.h / 2) / grid.rows < 0.5;
+
+      /* A quarter-round, written as an explicit horizontal/vertical
+         pair. A single percentage resolves against each axis
+         separately, so on a 4x1 bar it would arch a quarter of the
+         WIDTH horizontally and a quarter of the height vertically — a
+         long shallow sweep rather than a corner. Pinning both radii to
+         the short side keeps the same arch on every block. */
+      const short = Math.min(box.w, box.h);
+      const h = ((short / box.w) * 50).toFixed(2);
+      const v = ((short / box.h) * 50).toFixed(2);
+      const corner = (which: 0 | 1 | 2 | 3) => {
+        const hs = ["0", "0", "0", "0"];
+        const vs = ["0", "0", "0", "0"];
+        hs[which] = `${h}%`;
+        vs[which] = `${v}%`;
+        return `${hs.join(" ")} / ${vs.join(" ")}`;
+      };
+
+      // Order is top-left, top-right, bottom-right, bottom-left.
+      if (top && left) return corner(0);
+      if (top) return corner(1);
+      if (left) return corner(3);
+      return corner(2);
     }
+
     case "round":
-      return "50%";
-    case "capsule":
-      // Rounded hard on the short axis; the long axis stays a bar.
+      /* A pill on the short axis — a true circle when the box is
+         square, a stadium when it is not. `50%` looked right on square
+         blocks and turned every wide one into a flattened ellipse. */
       return "9999px";
+
+    case "capsule": {
+      /* A softened brick: the step between hard-edged and fully round,
+         so the cycle reads as one shape relaxing in stages. */
+      const short = Math.min(box.w, box.h);
+      const h = ((short / box.w) * 14).toFixed(2);
+      const v = ((short / box.h) * 14).toFixed(2);
+      return `${h}% / ${v}%`;
+    }
   }
 }
 
+/** The radius for one shape, its own override taking precedence. */
+export function shapeRadius(
+  shape: Shape,
+  phase: Phase,
+  grid: { cols: number; rows: number },
+): string {
+  return shape.radius ?? radii(phase, shape, grid);
+}
 
+/* The compositions. Placed by hand and edited at /studio; the
+   numbers are grid units, and nothing constrains them to the grid. */
 
+/** Landscape, on a 12 x 6 field. */
+const LANDSCAPE: Composition[] = [
+  {
+    name: "Colonnade",
+    note: "An even run of uprights over a pair of shorter ones, on a single full-width plinth.",
+    phase: "square",
+    shapes: [
+      { c: 0, r: 0, w: 2, h: 3 },
+      { c: 2, r: 0, w: 3, h: 3 },
+      { c: 5, r: 0, w: 3, h: 3 },
+      { c: 8, r: 0, w: 2, h: 3 },
+      { c: 10, r: 0, w: 2, h: 3 },
+      { c: 0, r: 3, w: 2, h: 2 },
+      { c: 2, r: 3, w: 3, h: 2 },
+      { c: 5, r: 3, w: 3, h: 2 },
+      { c: 8, r: 3, w: 2, h: 2 },
+      { c: 10, r: 3, w: 2, h: 2 },
+      { c: 0, r: 5, w: 12, h: 1 },
+    ],
+  },
+  {
+    name: "Keystone",
+    note: "One block holds the middle and everything else braces around it.",
+    phase: "shoulder",
+    shapes: [
+      { c: 0, r: 0, w: 3, h: 1 },
+      { c: 3, r: 0, w: 5, h: 3 },
+      { c: 8, r: 0, w: 4, h: 1 },
+      { c: 0, r: 1, w: 3, h: 3 },
+      { c: 8, r: 1, w: 4, h: 3 },
+      { c: 3, r: 3, w: 2, h: 2 },
+      { c: 5, r: 3, w: 3, h: 2 },
+      { c: 0, r: 4, w: 3, h: 1 },
+      { c: 8, r: 4, w: 4, h: 1 },
+      { c: 0, r: 5, w: 6, h: 1 },
+      { c: 6, r: 5, w: 6, h: 1 },
+    ],
+  },
+  {
+    name: "Staircase",
+    note: "Three descending tiers, each cut finer than the one above it.",
+    phase: "capsule",
+    shapes: [
+      { c: 0, r: 0, w: 4, h: 2 },
+      { c: 4, r: 0, w: 4, h: 2 },
+      { c: 8, r: 0, w: 4, h: 2 },
+      { c: 0, r: 2, w: 4, h: 2 },
+      { c: 4, r: 2, w: 4, h: 2 },
+      { c: 8, r: 2, w: 4, h: 2 },
+      { c: 0, r: 4, w: 3, h: 2 },
+      { c: 3, r: 4, w: 3, h: 2 },
+      { c: 6, r: 4, w: 3, h: 2 },
+      { c: 9, r: 4, w: 3, h: 1 },
+      { c: 9, r: 5, w: 3, h: 1 },
+    ],
+  },
+  {
+    name: "Horizon",
+    note: "A banded landscape: a lid, a wide middle register, small marks, a base.",
+    phase: "square",
+    shapes: [
+      { c: 0, r: 0, w: 6, h: 1 },
+      { c: 6, r: 0, w: 6, h: 1 },
+      { c: 0, r: 1, w: 3, h: 3 },
+      { c: 3, r: 1, w: 5, h: 3 },
+      { c: 8, r: 1, w: 4, h: 3 },
+      { c: 0, r: 4, w: 2, h: 1 },
+      { c: 2, r: 4, w: 2, h: 1 },
+      { c: 4, r: 4, w: 3, h: 1 },
+      { c: 7, r: 4, w: 2, h: 1 },
+      { c: 9, r: 4, w: 3, h: 1 },
+      { c: 0, r: 5, w: 12, h: 1 },
+    ],
+  },
+  {
+    name: "Pillars",
+    note: "Tall outer columns gripping a shorter cluster.",
+    phase: "round",
+    shapes: [
+      { c: 0, r: 0, w: 2, h: 4 },
+      { c: 2, r: 0, w: 2, h: 4 },
+      { c: 4, r: 0, w: 4, h: 3 },
+      { c: 8, r: 0, w: 2, h: 4 },
+      { c: 10, r: 0, w: 2, h: 4 },
+      { c: 4, r: 3, w: 2, h: 2 },
+      { c: 6, r: 3, w: 2, h: 2 },
+      { c: 0, r: 4, w: 4, h: 2 },
+      { c: 8, r: 4, w: 4, h: 2 },
+      { c: 4, r: 5, w: 2, h: 1 },
+      { c: 6, r: 5, w: 2, h: 1 },
+    ],
+  },
+];
 
+/** Portrait, on a 6 x 12 field — the same ideas, redrawn for a tall frame. */
+const PORTRAIT: Composition[] = [
+  {
+    name: "Colonnade",
+    note: "The uprights and plinth, restacked for a tall frame.",
+    phase: "square",
+    shapes: [
+      { c: 0, r: 0, w: 3, h: 2 },
+      { c: 3, r: 0, w: 3, h: 2 },
+      { c: 0, r: 2, w: 3, h: 3 },
+      { c: 3, r: 2, w: 3, h: 3 },
+      { c: 0, r: 5, w: 3, h: 2 },
+      { c: 3, r: 5, w: 3, h: 2 },
+      { c: 0, r: 7, w: 2, h: 2 },
+      { c: 2, r: 7, w: 2, h: 2 },
+      { c: 4, r: 7, w: 2, h: 2 },
+      { c: 0, r: 9, w: 6, h: 1 },
+      { c: 0, r: 10, w: 6, h: 2 },
+    ],
+  },
+  {
+    name: "Keystone",
+    note: "The dominant centre block, braced above and below.",
+    phase: "shoulder",
+    shapes: [
+      { c: 0, r: 0, w: 3, h: 2 },
+      { c: 3, r: 0, w: 3, h: 2 },
+      { c: 0, r: 2, w: 6, h: 3 },
+      { c: 0, r: 5, w: 3, h: 2 },
+      { c: 3, r: 5, w: 3, h: 2 },
+      { c: 0, r: 7, w: 6, h: 1 },
+      { c: 0, r: 8, w: 3, h: 2 },
+      { c: 3, r: 8, w: 3, h: 2 },
+      { c: 0, r: 10, w: 2, h: 2 },
+      { c: 2, r: 10, w: 2, h: 2 },
+      { c: 4, r: 10, w: 2, h: 2 },
+    ],
+  },
+  {
+    name: "Staircase",
+    note: "Descending tiers, each cut finer than the one above.",
+    phase: "capsule",
+    shapes: [
+      { c: 0, r: 0, w: 4, h: 3 },
+      { c: 4, r: 0, w: 2, h: 3 },
+      { c: 0, r: 3, w: 2, h: 2 },
+      { c: 2, r: 3, w: 4, h: 2 },
+      { c: 0, r: 5, w: 3, h: 2 },
+      { c: 3, r: 5, w: 3, h: 2 },
+      { c: 0, r: 7, w: 4, h: 2 },
+      { c: 4, r: 7, w: 2, h: 2 },
+      { c: 0, r: 9, w: 3, h: 2 },
+      { c: 3, r: 9, w: 3, h: 2 },
+      { c: 0, r: 11, w: 6, h: 1 },
+    ],
+  },
+  {
+    name: "Horizon",
+    note: "Banded registers: a lid, a wide middle, small marks, a base.",
+    phase: "square",
+    shapes: [
+      { c: 0, r: 0, w: 6, h: 1 },
+      { c: 0, r: 1, w: 3, h: 2 },
+      { c: 3, r: 1, w: 3, h: 2 },
+      { c: 0, r: 3, w: 6, h: 3 },
+      { c: 0, r: 6, w: 3, h: 2 },
+      { c: 3, r: 6, w: 3, h: 2 },
+      { c: 0, r: 8, w: 2, h: 2 },
+      { c: 2, r: 8, w: 2, h: 2 },
+      { c: 4, r: 8, w: 2, h: 2 },
+      { c: 0, r: 10, w: 6, h: 1 },
+      { c: 0, r: 11, w: 6, h: 1 },
+    ],
+  },
+  {
+    name: "Pillars",
+    note: "Tall columns above a shorter cluster, weight at the edges.",
+    phase: "round",
+    shapes: [
+      { c: 0, r: 0, w: 3, h: 4 },
+      { c: 3, r: 0, w: 3, h: 4 },
+      { c: 0, r: 4, w: 2, h: 2 },
+      { c: 2, r: 4, w: 2, h: 2 },
+      { c: 4, r: 4, w: 2, h: 2 },
+      { c: 0, r: 6, w: 3, h: 3 },
+      { c: 3, r: 6, w: 3, h: 3 },
+      { c: 0, r: 9, w: 2, h: 2 },
+      { c: 2, r: 9, w: 2, h: 2 },
+      { c: 4, r: 9, w: 2, h: 2 },
+      { c: 0, r: 11, w: 6, h: 1 },
+    ],
+  },
+];
 
+/* Exposed for the editor at /studio to read and write back. */
+export const MAPS: Record<Orientation, Composition[]> = {
+  landscape: LANDSCAPE,
+  portrait: PORTRAIT,
+};
 
-/* ------------------------------------------------------------------
-   Keeping the collage clean DURING the move.
-
-   Two shapes can each be overlap-free at rest and still cross paths
-   while tweening. Requiring the swept boxes to be disjoint fixes that
-   but is far too strict — measured 18.7% acceptance, and chains of
-   such layouts dead-end within a step or two.
-
-   Instead the layout is built from COLUMN BANDS. Each shape owns a band
-   for the whole animation; only its vertical extent within that band
-   changes. Shapes never share horizontal space, so no two can ever
-   cross, at rest or in flight — again a property of the construction
-   rather than a test that might miss a case.
-   ------------------------------------------------------------------ */
+export const COMPOSITION_COUNT = LANDSCAPE.length;
 
 /**
- * `n` shapes packed into vertical bands. Band boundaries are stable for
- * a given `bandSeed`, so shapes keep their column while their heights
- * and vertical offsets reshuffle.
+ * The `step`-th composition.
+ *
+ * Shapes are handed out in array order, and every composition lists
+ * them in that same order, so shape i occupies roughly the same region
+ * of the frame throughout. That is what makes a change read as one
+ * arrangement settling into another rather than eleven blocks
+ * scattering — a tile travels a short way to its next post instead of
+ * crossing the screen past everything else.
  */
-export function packBands(n: number, seed: number, bandSeed = 1): Rect[] {
-  const bandRand = rng(bandSeed);
-  // How many columns per band: at least 1, summing to COLS.
-  const weights = Array.from({ length: n }, () => 0.6 + bandRand() * 0.8);
-  const total = weights.reduce((a, b) => a + b, 0);
-  const widths = weights.map((w) => Math.max(1, Math.round((w / total) * COLS)));
+export function composition(step: number, o: Orientation = "landscape"): Composition {
+  const set = MAPS[o];
+  return set[((step % set.length) + set.length) % set.length];
+}
 
-  // Fix rounding drift so the bands exactly fill COLS.
-  let drift = widths.reduce((a, b) => a + b, 0) - COLS;
-  for (let i = 0; drift !== 0 && i < widths.length * 4; i++) {
-    const k = i % widths.length;
-    if (drift > 0 && widths[k] > 1) {
-      widths[k]--;
-      drift--;
-    } else if (drift < 0) {
-      widths[k]++;
-      drift++;
-    }
-  }
-
-  const rand = rng(seed);
-  const out: Rect[] = [];
-  let c = 0;
-  for (let i = 0; i < n; i++) {
-    const w = widths[i];
-    // Vary height and vertical position inside the band.
-    const h = 2 + Math.floor(rand() * (ROWS - 1));
-    const r = Math.floor(rand() * (ROWS - h + 1));
-    out.push({ c, r, w: w, h: Math.min(h, ROWS - r) });
-    c += w;
-  }
+/**
+ * Placements for the `step`-th composition.
+ *
+ * `n` is honoured for safety: a composition is authored for the full
+ * cast, so asking for more shapes than it holds repeats the last rather
+ * than dropping a tile off the page.
+ */
+export function pack(n: number, step: number, o: Orientation = "landscape"): Shape[] {
+  const { shapes } = composition(step, o);
+  const out = shapes.slice(0, n).map((s) => ({ ...s }));
+  while (out.length < n) out.push({ ...shapes[shapes.length - 1] });
   return out;
 }

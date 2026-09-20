@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import Lenis from "lenis";
 import { PROFILE, PROJECTS, type Project } from "./content";
-import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
+import { pack, composition, shapeRadius, GRID, type Orientation } from "./pack";
+import SwarmCursor from "../components/SwarmCursor";
 
 /* ============================================================
    Two states, one screen, no document scrolling — ever.
@@ -24,23 +26,22 @@ import { pack, radii, PHASES, GRID, type Orientation } from "./pack";
    SCROLL_GAIN under 1 makes the rail move less than the wheel, so
    crossing a case study takes a deliberate scroll rather than one
    flick, and each notch lands as a glide rather than a jump. */
-const OVERSCROLL_LIMIT = 180;
 const SCROLL_GAIN = 0.55;
 
 const ORDER = [...PROJECTS].sort((a, b) => b.year - a.year);
 
 const TONE: Record<string, string> = {
-  simblip: "#2b57ff",
-  saul: "#0a0a0a",
-  looni: "#ff5147",
-  rotary: "#1f9c6b",
-  copaila: "#ffc93f",
-  bijulibatti: "#7b61ff",
-  orbital: "#0a0a0a",
-  refill: "#127a54",
-  rover: "#1d3fd4",
-  fraud: "#8e93a3",
-  hackforbusiness: "#e8402f",
+  simblip: "#55E6C1",
+  saul: "#292522",
+  looni: "#EF476F",
+  rotary: "#4E7D32",
+  copaila: "#86B83F",
+  bijulibatti: "#8067D6",
+  orbital: "#FFD166",
+  refill: "#39735A",
+  rover: "#126782",
+  fraud: "#75645D",
+  hackforbusiness: "#D1493F",
 };
 
 /**
@@ -65,7 +66,12 @@ const INK = "#0a0a0a";
 const inkOn = (slug: string | null) => {
   const bg = slug ? TONE[slug] : PAPER;
   if (!bg) return INK;
-  return contrast(bg, PAPER) >= contrast(bg, INK) ? PAPER : INK;
+  /* Black only wins when it clears white by a real margin. On the
+     saturated mid-tones (looni, hackforbusiness) the two ratios land
+     close enough that black technically edges ahead, but reads
+     muddier there than white does — the margin corrects for that
+     instead of trusting the bare comparison. */
+  return contrast(bg, INK) > contrast(bg, PAPER) * 1.6 ? INK : PAPER;
 };
 
 type Origin = { rect: DOMRect; radius: string };
@@ -84,9 +90,11 @@ export default function Shell() {
   const [slug, setSlug] = useState<string | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  const [seed, setSeed] = useState(1);
-  // Which silhouette the whole grid is wearing. See PHASES in pack.ts.
-  const [phase, setPhase] = useState(0);
+  /* One counter drives the whole cycle. Layout and silhouette are
+     read off it at different periods — 5 compositions against 4
+     silhouettes — so a pairing only comes round again every 20 ticks
+     rather than the two locking together into a short loop. */
+  const [tick, setTick] = useState(0);
   const [orient, setOrient] = useState<Orientation>("landscape");
   const [from, setFrom] = useState<Origin | null>(null);
 
@@ -112,18 +120,14 @@ export default function Shell() {
   /* The composition cycles on a slow loop, paused when a project is
      open or a tile is hovered.
 
-     Position AND silhouette advance on the same tick: the reference
-     repacks its grid and changes its corners together, so a block
-     glides to a new cell while it is also becoming a circle. Changing
-     only one at a time reads as two separate effects rather than one
-     composition rearranging itself. */
+     Arrangement AND silhouette advance on the same tick, so a block
+     glides to its post in the next composition while it is also
+     becoming a circle. Changing only one at a time reads as two
+     separate effects rather than one composition restating itself. */
   useEffect(() => {
     if (slug || hover) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const t = setInterval(() => {
-      setSeed((n) => n + 1);
-      setPhase((p) => p + 1);
-    }, 2600);
+    const t = setInterval(() => setTick((n) => n + 1), 2600);
     return () => clearInterval(t);
   }, [slug, hover]);
 
@@ -162,8 +166,13 @@ export default function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [slug, close]);
 
-  const boxes = pack(ORDER.length, seed, orient);
   const grid = GRID[orient];
+  const boxes = pack(ORDER.length, tick, orient);
+  /* The silhouette now travels WITH the arrangement: each composition
+     names the phase it was drawn for, so a layout always appears in the
+     corner treatment it was composed with rather than in whichever one
+     the tick happened to land on. */
+  const { phase: silhouette } = composition(tick, orient);
 
   const active = slug ? PROJECTS.find((p) => p.slug === slug) : undefined;
   const hovered = hover ? PROJECTS.find((p) => p.slug === hover) : undefined;
@@ -175,16 +184,55 @@ export default function Shell() {
         background: "var(--color-paper)",
       }}
     >
-      {/* ---------- HOME: the mosaic ---------- */}
+      {/* ---------- The swarm ----------
+
+          A stroke of ink that trails the cursor across the paper. It
+          sits at z-0 while the mosaic is z-10, so the trail passes
+          BEHIND the blocks and only shows in the gaps between them —
+          something moving behind the composition rather than a layer
+          smeared on top of it. The blocks stay the subject.
+
+          It listens on the window (track), not on its own box: this
+          layer is pointer-events-none and underneath the tiles, so it
+          would otherwise never receive an event.
+
+          It is pointer-events-none and aria-hidden: purely atmosphere,
+          never something to tab into or read out. `enabled` drops it
+          the moment a case study opens, because the panel floods the
+          screen with its own colour and a swarm crawling underneath is
+          both invisible and a GPU loop running for nothing. */}
       <div
-        className="absolute inset-0 grid place-items-center p-4 sm:p-6"
-        style={{
-          opacity: active ? 0 : 1,
-          pointerEvents: active ? "none" : undefined,
-          transition: active
-            ? "opacity calc(var(--dur-panel) * 0.35) linear calc(var(--dur-panel) * 0.5)"
-            : "opacity calc(var(--dur-panel) * 0.25) linear",
-        }}
+        className="pointer-events-none absolute inset-0 z-0"
+        aria-hidden
+      >
+        <SwarmCursor
+          color="#000000"
+          accentColor="#000000"
+          count={4
+          }
+          glow={0}
+          size={10}
+          merge={0.65}
+          speed={2}
+          spread={0}
+          wander={0}
+          trail={0.1}
+          opacity={1}
+          enabled={!active}
+          track="window"
+          scatterOnClick
+        />
+      </div>
+
+      {/* ---------- HOME: the mosaic ---------- */}
+      {/* The container no longer fades as a whole. The chosen shape is
+          being taken over by the expanding panel, so fading everything
+          hid the siblings behind it rather than letting them react.
+          Each tile handles its own exit below: the chosen one holds,
+          the rest collapse to nothing. */}
+      <div
+        className="absolute inset-0 z-10 grid place-items-center p-4 sm:p-6"
+        style={{ pointerEvents: active ? "none" : undefined }}
         aria-hidden={Boolean(active)}
       >
         <div
@@ -193,6 +241,15 @@ export default function Shell() {
           {ORDER.map((p, i) => {
             const lift = hover === p.slug;
             const dim = hover !== null && !lift;
+            /* When one shape is chosen, the others shrink to nothing.
+               They collapse from their own centres so the composition
+               reads as clearing a path for the panel rather than as a
+               layer fading out. The chosen one stays exactly where it
+               is and at full size: the panel grows out of its rect, so
+               anything else would show a seam at the start of the
+               expansion. */
+            const chosen = active?.slug === p.slug;
+            const banished = Boolean(active) && !chosen;
             return (
               <button
                 key={p.slug}
@@ -211,26 +268,46 @@ export default function Shell() {
                   width: `${(boxes[i].w / grid.cols) * 100}%`,
                   height: `${(boxes[i].h / grid.rows) * 100}%`,
                   background: TONE[p.slug],
-                  borderRadius: radii(PHASES[phase % PHASES.length], i),
-                  transition: [
-                    "left var(--dur-move) var(--ease-move)",
-                    "top var(--dur-move) var(--ease-move)",
-                    "width var(--dur-move) var(--ease-move)",
-                    "height var(--dur-move) var(--ease-move)",
-                    "border-radius var(--dur-move) var(--ease-move)",
-                    "opacity var(--dur) var(--ease)",
-                    "transform var(--dur) var(--ease)",
-                    "box-shadow var(--dur) var(--ease)",
-                  ].join(", "),
-                  transform: ready
-                    ? lift
-                      ? "scale(1.035)"
-                      : "none"
-                    : "translateY(16px)",
-                  opacity: ready ? (dim ? 0.62 : 1) : 0,
+                  borderRadius: shapeRadius(boxes[i], silhouette, grid),
+                  /* The collapse runs on the panel's own curve and a
+                     fraction of its duration, so the shapes are gone
+                     well before the expansion fills the screen —
+                     matching the rest of the site's timing rather than
+                     inventing a number. */
+                  /* Opacity trails the scale and runs on a linear
+                     curve deliberately: --ease front-loads its change,
+                     so the shapes went transparent while still near
+                     full size and the collapse was never actually
+                     seen. Fading late means what reads is the shrink. */
+                  transition: banished
+                    ? "transform calc(var(--dur-panel) * 0.45) var(--ease-panel), opacity calc(var(--dur-panel) * 0.3) linear calc(var(--dur-panel) * 0.15)"
+                    : [
+                        "left var(--dur-move) var(--ease-move)",
+                        "top var(--dur-move) var(--ease-move)",
+                        "width var(--dur-move) var(--ease-move)",
+                        "height var(--dur-move) var(--ease-move)",
+                        "border-radius var(--dur-move) var(--ease-move)",
+                        "opacity var(--dur) var(--ease)",
+                        "transform var(--dur) var(--ease)",
+                        "box-shadow var(--dur) var(--ease)",
+                      ].join(", "),
+                  transform: banished
+                    ? "scale(0)"
+                    : ready
+                      ? lift
+                        ? "scale(1.035)"
+                        : "none"
+                      : "translateY(16px)",
+                  opacity: banished ? 0 : ready ? (dim ? 0.62 : 1) : 0,
                   zIndex: lift ? 2 : 1,
                   boxShadow: lift ? "0 14px 36px rgb(0 0 0 / 0.22)" : "none",
-                  transitionDelay: ready ? "0ms" : `${i * 35}ms`,
+                  /* Shapes furthest from the chosen one leave last, so
+                     the clearing travels outward from the click. */
+                  transitionDelay: banished
+                    ? `${Math.abs(i - ORDER.findIndex((o) => o.slug === active!.slug)) * 28}ms`
+                    : ready
+                      ? "0ms"
+                      : `${i * 35}ms`,
                 }}
               />
             );
@@ -326,6 +403,9 @@ function ProjectView({
   const [phase, setPhase] = useState<Phase>("closed");
   const [liveOrigin, setLiveOrigin] = useState<Origin | null>(from);
   const [progress, setProgress] = useState(0);
+  // Which edge zone (outer 20% of the viewport) the cursor is over, if
+  // any — drives both the arrow cursor and what a click there does.
+  const [edgeZone, setEdgeZone] = useState<-1 | 0 | 1>(0);
   /* How far the current overscroll has gone toward closing, 0..1, and
      at which end. Drives the arrow in the void: it is the same number
      the close threshold uses, so what the reader sees growing IS the
@@ -344,11 +424,15 @@ function ProjectView({
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  const targetX = useRef(0);
-  const currentX = useRef(0);
   const maxScroll = useRef(0);
   const railRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const lenisRef = useRef<Lenis | null>(null);
   const rafId = useRef<number | null>(null);
+  /* Where the rail should rest once it exists. The open effect measures
+     this before Lenis has mounted, so it is parked here and consumed by
+     the Lenis effect rather than applied directly. */
+  const restX = useRef(0);
 
   /* Guards the open animation to one run per activation. `setLiveOrigin`
      below re-renders, and `from` is a dependency of that effect, so
@@ -356,14 +440,71 @@ function ProjectView({
      animation restarting from the tile. */
   const openedFor = useRef<string | null>(null);
 
+  /* Clicking the shot grows it to fill the screen, then leaves for the
+     live site. The picture becoming the window is the whole point: the
+     reader watches the thing they were looking at turn into the thing
+     itself, rather than a new tab appearing out of nowhere.
+
+     Same trick as the tile→panel open — measure the element's rect, then
+     animate a fixed clone from that rect to the full viewport. The clone
+     is what moves; the original stays put underneath so there is no
+     layout shift in the rail if the reader comes back. */
+  const shotRef = useRef<HTMLButtonElement>(null);
+  const [launching, setLaunching] = useState(false);
+
+  const launch = useCallback(() => {
+    const el = shotRef.current;
+    if (!p.live || !el || launching) return;
+
+    /* Someone who asked for less motion wants the destination, not the
+       journey — a full-screen zoom is exactly the effect they turned off. */
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      window.open(p.live, "_blank", "noopener,noreferrer");
+      return;
+    }
+    setLaunching(true);
+
+    const r = el.getBoundingClientRect();
+    const clone = el.cloneNode(true) as HTMLElement;
+    /* A cloned <button> keeps its disabled styling and can swallow the
+       pointer; this is scenery for ~520ms, so strip it to a plain box. */
+    clone.removeAttribute("disabled");
+    clone.style.cssText = `position:fixed;left:${r.left}px;top:${r.top}px;width:${r.width}px;height:${r.height}px;margin:0;z-index:80;pointer-events:none;border-radius:${getComputedStyle(el).borderRadius};overflow:hidden;`;
+    document.body.appendChild(clone);
+
+    const anim = clone.animate(
+      [
+        { transform: "translate(0,0) scale(1)", borderRadius: getComputedStyle(el).borderRadius },
+        {
+          transform: `translate(${-r.left + window.innerWidth / 2 - r.width / 2}px, ${
+            -r.top + window.innerHeight / 2 - r.height / 2
+          }px) scale(${Math.max(window.innerWidth / r.width, window.innerHeight / r.height)})`,
+          borderRadius: "0px",
+        },
+      ],
+      { duration: 520, easing: "cubic-bezier(0.7, 0, 0.2, 1)", fill: "forwards" },
+    );
+
+    anim.finished
+      .catch(() => {})
+      .finally(() => {
+        window.open(p.live, "_blank", "noopener,noreferrer");
+        /* Leave the clone up for a beat: the new tab takes the
+           foreground, and tearing the expansion down first would flash
+           the rail back before the site appears. */
+        setTimeout(() => {
+          clone.remove();
+          setLaunching(false);
+        }, 260);
+      });
+  }, [p.live, launching]);
+
   /* How far past an end the wheel must travel before the panel closes.
      Deliberately large: a flick to the end of the rail is ~1-2 notches
      of overscroll, and closing on that made the panel feel like it shut
      itself. This is roughly six firm notches. */
   const closingRef = useRef(false);
 
-  const isDragging = useRef(false);
-  const dragStart = useRef({ x: 0, scroll: 0, lastX: 0, velocity: 0, time: 0 });
 
   // Phase state machine for opening & closing
   useEffect(() => {
@@ -434,26 +575,22 @@ function ProjectView({
           const railEl = railRef.current;
           const titleEl = railEl?.children[1] as HTMLElement | undefined;
           if (railEl && titleEl) {
-            /* `targetX` is measured from the start of the CONTENT, so
-               the leading void's width comes off: 0 means "title area",
-               and negative means the reader has backed into the void. */
-            /* `targetX` is measured from the start of the CONTENT: the
-               rail transform adds one viewport so that x=0 sits at the
-               content edge with the leading void off-screen to the
-               left. offsetLeft is measured from the rail edge and so
-               includes that void, hence subtracting one viewport here. */
-            /* Centre the HEADING, not its container: the wrapper
-               carries px-[6vw] padding the glyphs do not fill, so
-               centring the box leaves the word visibly off to one
-               side. */
+            /* Now that the rail is a real scroll container, `restX` is
+               an ordinary scroll position: 0 is the leading void and
+               `offsetLeft` — measured from the rail's own start — is
+               already in that same space, so nothing has to be
+               rebased. */
+            /* Rest with the HEADING's left edge a fixed 10% of the
+               viewport in from the left, not centred: centring put a
+               large title's start off-screen, since the box grows
+               rightward from wherever the centre lands it. A fixed
+               left inset keeps the first glyph in the same place
+               regardless of how wide the title is. */
             const glyphs = (titleEl.querySelector("h2") ??
               titleEl) as HTMLElement;
             const rest =
-              titleEl.offsetLeft +
-              glyphs.offsetLeft -
-              (window.innerWidth - glyphs.offsetWidth) / 2;
-            targetX.current = rest;
-            currentX.current = rest;
+              titleEl.offsetLeft + glyphs.offsetLeft - window.innerWidth * 0.1;
+            restX.current = rest;
           }
         } else {
           setPhase("open");
@@ -474,7 +611,7 @@ function ProjectView({
               radius: getComputedStyle(tileEl).borderRadius,
             });
           }
-          targetX.current = 0; // smoothly return rail to origin
+          restX.current = 0; // the rail returns to the origin on reopen
           return "closing";
         }
         return prev;
@@ -509,39 +646,55 @@ function ProjectView({
     return maxScroll.current;
   }, []);
 
-  // Continuous RAF lerp physics loop for smooth horizontal scrolling
+  /* Lenis drives the rail.
+
+     Everything below used to be hand-written: a per-frame lerp, a wheel
+     normaliser, a rubber-band, and a touch-inertia drag handler. Lenis
+     is the same physics done properly — it tracks the input device
+     rather than a fixed per-frame factor, so a slow drag stays glued to
+     the finger while a flick still coasts. The site keeps only what is
+     its own: reading the position to drive the arrow and the close. */
   useEffect(() => {
     if (!isVisible) return;
+    const wrapper = wrapperRef.current;
+    const content = railRef.current;
+    if (!wrapper || !content) return;
+
+    const lenis = new Lenis({
+      wrapper,
+      content,
+      orientation: "horizontal",
+      /* The wheel is vertical on most mice; without this the rail only
+         answers to horizontal trackpad gestures. */
+      gestureOrientation: "both",
+      /* Responsive AND springy: a high lerp tracks the gesture closely
+         while the rail keeps coasting after it ends. The old 0.085
+         per-frame factor was the sluggish half of that tradeoff. */
+      lerp: 0.12,
+      wheelMultiplier: SCROLL_GAIN,
+      /* Glue the rail to the finger on touch, then release into
+         inertia — the default (false) falls back to native-feeling
+         momentum that fights the transform. */
+      syncTouch: true,
+      touchMultiplier: 1.6,
+      overscroll: false,
+    });
+    lenisRef.current = lenis;
+
     measure();
+    // Park on the title measured during the open.
+    if (restX.current) lenis.scrollTo(restX.current, { immediate: true });
 
     let lastProgress = -1;
 
-    const loop = () => {
+    const loop = (time: number) => {
+      lenis.raf(time);
+
       const max = maxScroll.current;
-      const dx = targetX.current - currentX.current;
-
-      if (Math.abs(dx) > 0.05) {
-        /* Lower factor = longer glide. 0.16 tracked the wheel almost
-           rigidly, which read as harsh; 0.085 lets the rail keep
-           coasting after the gesture stops. */
-        currentX.current += dx * 0.085;
-      } else {
-        currentX.current = targetX.current;
-      }
-
-      // Rebound rubberband if out of bounds and not actively wheeling
-      if (!isDragging.current && targetX.current < 0) {
-        targetX.current *= 0.82;
-      } else if (!isDragging.current && targetX.current > max) {
-        targetX.current = max + (targetX.current - max) * 0.82;
-      }
-
-      if (railRef.current) {
-        railRef.current.style.transform = `translate3d(${-currentX.current.toFixed(2)}px, 0, 0)`;
-      }
+      const x = lenis.scroll;
 
       if (max > 0) {
-        const pct = Math.max(0, Math.min(1, currentX.current / max));
+        const pct = Math.max(0, Math.min(1, x / max));
         if (Math.abs(pct - lastProgress) > 0.005) {
           lastProgress = pct;
           setProgress(pct);
@@ -557,14 +710,13 @@ function ProjectView({
          the void is nothing; its far edge is full size.
 
          Position runs through --ease-panel, so the growth carries the
-         same curve as the panel expansion, and the rail's own lerp
-         smooths it — `currentX` moves every frame even while the wheel
-         is between events.
+         same curve as the panel expansion, and Lenis's own smoothing
+         carries it — the position moves every frame even while the
+         wheel is between events.
 
          Written as a TRANSFORM: animating width/height would relayout
          the SVG on every frame. */
       const vw = window.innerWidth;
-      const x = currentX.current;
       let dir: -1 | 0 | 1 = 0;
       let through = 0;
       if (x < vw) {
@@ -600,133 +752,61 @@ function ProjectView({
 
     rafId.current = requestAnimationFrame(loop);
 
-    return () => {
-      if (rafId.current) cancelAnimationFrame(rafId.current);
-    };
-  }, [isVisible, measure]);
-
-  // Event handlers for wheel and keyboard nav
-  useEffect(() => {
-    if (!active) return;
-    measure();
-
-    /* Overscroll past either end closes the panel — but only after a
-       sustained push.
-
-       The distance is ACCUMULATED across events rather than tested per
-       event, because a trackpad emits a long momentum tail after the
-       finger lifts; acting on any single delta makes the panel appear to
-       shut by itself at the end of an ordinary flick. The counter also
-       decays, so slow nudges against the edge never add up to a close —
-       it has to be one deliberate continuous push.
-
-       While overscrolled the rail rubber-bands at a quarter rate, so
-       there is visible resistance the whole way rather than a hard stop
-       followed by a sudden dismissal. */
-    const onWheel = (e: WheelEvent) => {
-      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (!d) return;
-      e.preventDefault();
-      if (closingRef.current) return;
-
-      const max = maxScroll.current;
-
-      /* Plain scrolling: the voids carry the close now.
-
-         There is no accumulator here any more. Travelling into a void
-         grows the arrow (see the RAF loop) and crossing it closes the
-         panel, so the wheel only has to move the rail. The range runs
-         one viewport past each end so a void can be entered fully. */
-      targetX.current = Math.min(
-        max + window.innerWidth,
-        Math.max(-window.innerWidth, targetX.current + d * SCROLL_GAIN),
-      );
-    };
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight") {
-        e.preventDefault();
-        targetX.current = Math.min(measure(), targetX.current + window.innerWidth * 0.65);
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        targetX.current = Math.max(0, targetX.current - window.innerWidth * 0.65);
-      }
-    };
-
-    const onResize = () => {
-      measure();
-    };
-
-    window.addEventListener("wheel", onWheel, { passive: false });
-    window.addEventListener("keydown", onKey);
+    const onResize = () => measure();
     window.addEventListener("resize", onResize);
 
     return () => {
-      window.removeEventListener("wheel", onWheel);
-      window.removeEventListener("keydown", onKey);
+      if (rafId.current) cancelAnimationFrame(rafId.current);
       window.removeEventListener("resize", onResize);
-      targetX.current = 0;
-      currentX.current = 0;
+      lenis.destroy();
+      lenisRef.current = null;
     };
-  }, [active, measure, onClose]);
+  }, [isVisible, measure]);
 
-  // Pointer drag handling with smooth inertia
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("a, button")) return;
-    isDragging.current = true;
-    const now = performance.now();
-    dragStart.current = {
-      x: e.clientX,
-      scroll: targetX.current,
-      lastX: e.clientX,
-      velocity: 0,
-      time: now,
+  // Keyboard nav — one screen per press, on Lenis's own curve.
+  useEffect(() => {
+    if (!active) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      const lenis = lenisRef.current;
+      if (!lenis) return;
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        lenis.scrollTo(lenis.scroll + window.innerWidth * 0.65);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        lenis.scrollTo(lenis.scroll - window.innerWidth * 0.65);
+      }
     };
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active]);
+
+  /* Edge zones: the outer 20% of the viewport on either side. Hovering
+     one shows the arrow cursor; clicking anywhere in it scrolls the
+     rail exactly one screen toward that edge. */
+  const zoneAt = (x: number): -1 | 0 | 1 => {
+    const vw = window.innerWidth;
+    if (x < vw * 0.2) return -1;
+    if (x > vw * 0.8) return 1;
+    return 0;
   };
 
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!isDragging.current) return;
-    const now = performance.now();
-    const dt = Math.max(1, now - dragStart.current.time);
-    dragStart.current.velocity = (dragStart.current.lastX - e.clientX) / dt;
-    dragStart.current.lastX = e.clientX;
-    dragStart.current.time = now;
+  const onRailMouseMove = useCallback((e: React.MouseEvent) => {
+    setEdgeZone(zoneAt(e.clientX));
+  }, []);
 
-    const delta = dragStart.current.x - e.clientX;
-    const max = maxScroll.current;
-    targetX.current = Math.min(
-      max + OVERSCROLL_LIMIT,
-      Math.max(-OVERSCROLL_LIMIT, dragStart.current.scroll + delta),
-    );
-  };
+  const onRailMouseLeave = useCallback(() => setEdgeZone(0), []);
 
-  const handlePointerUp = (e: React.PointerEvent) => {
-    if (!isDragging.current) return;
-    isDragging.current = false;
-
-    const max = maxScroll.current;
-    const inertia = dragStart.current.velocity * 160;
-    const finalTarget = targetX.current + inertia;
-
-    /* A drag released well past either end closes, mirroring the wheel.
-       The threshold is most of the rubber-band range, so a lazy overpull
-       springs back and only a committed drag dismisses. */
-    const DRAG_CLOSE = OVERSCROLL_LIMIT * 0.8;
-    if (!closingRef.current && (finalTarget < -DRAG_CLOSE || finalTarget > max + DRAG_CLOSE)) {
-      closingRef.current = true;
-      targetX.current = Math.min(max, Math.max(0, finalTarget));
-      onClose();
-    } else {
-      targetX.current = Math.min(max, Math.max(0, finalTarget));
-    }
-
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // Ignore if pointer capture already released
-    }
-  };
+  const onRailClick = useCallback((e: React.MouseEvent) => {
+    const zone = zoneAt(e.clientX);
+    if (zone === 0) return;
+    const lenis = lenisRef.current;
+    if (!lenis) return;
+    e.preventDefault();
+    lenis.scrollTo(lenis.scroll + zone * window.innerWidth);
+  }, []);
 
   /* Compute the expansion clip.
 
@@ -774,18 +854,30 @@ function ProjectView({
         zIndex: active ? 30 : isClosing ? 25 : 0,
         visibility: isVisible ? "visible" : "hidden",
       }}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
     >
-      {/* ---------- Travelling Rail ---------- */}
+      {/* ---------- Travelling Rail ----------
+
+          A real horizontal scroll container, driven by Lenis. The rail
+          used to be a transform moved by a hand-written lerp, which
+          meant re-implementing wheel normalisation, touch inertia and
+          rubber-banding by hand — Lenis does all three, and tracks the
+          input device far more responsively than a fixed per-frame
+          factor could. The scrollbar is hidden; the motion is the only
+          affordance. */}
+      <div
+        ref={wrapperRef}
+        onMouseMove={onRailMouseMove}
+        onMouseLeave={onRailMouseLeave}
+        onClick={onRailClick}
+        className="absolute inset-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        style={{
+          overscrollBehavior: "none",
+          cursor: edgeZone === -1 ? arrowCursor(-1, fg) : edgeZone === 1 ? arrowCursor(1, fg) : undefined,
+        }}
+      >
       <div
         ref={railRef}
-        className="absolute inset-y-0 left-0 flex touch-none items-center"
-        style={{
-          willChange: "transform",
-        }}
+        className="flex h-full w-max touch-none items-center"
       >
         {/* 0 — Leading void.
 
@@ -810,37 +902,57 @@ function ProjectView({
 
         {/* 2 — Description & Project Details */}
         <div
-          className="flex h-full w-[min(88vw,32rem)] shrink-0 flex-col justify-center gap-6 px-[4vw]"
+          className="flex h-full w-[min(90vw,44rem)] shrink-0 flex-col justify-center gap-6 px-[4vw]"
           style={rise(isOpen, 0.7)}
         >
-          <p className="t-body text-base sm:text-lg font-medium leading-relaxed font-sans" style={{ opacity: 0.94 }}>
+          <p className="t-body font-medium leading-relaxed font-sans" style={{ opacity: 0.94 }}>
             {p.line}
           </p>
 
-          <dl className="grid grid-cols-3 gap-4 border-y border-current/15 py-4 font-sans">
+          {/* Two columns, not three: with the larger type a 3-up grid
+              wrapped "Design and frontend" onto two lines and stranded
+              the fourth stat alone on a second row. */}
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 border-y border-current/20 py-5 font-sans">
             <div>
-              <dt className="t-label opacity-60">Year</dt>
-              <dd className="t-small text-sm font-semibold mt-0.5">{p.year}</dd>
+              <dt className="t-label" style={{ color: fg, opacity: 0.65 }}>Year</dt>
+              <dd className="t-small font-semibold mt-0.5" style={{ color: fg }}>{p.year}</dd>
             </div>
             <div>
-              <dt className="t-label opacity-60">Role</dt>
-              <dd className="t-small text-sm font-semibold mt-0.5">{p.role}</dd>
+              <dt className="t-label" style={{ color: fg, opacity: 0.65 }}>Role</dt>
+              <dd className="t-small font-semibold mt-0.5" style={{ color: fg }}>{p.role}</dd>
             </div>
             {p.commits ? (
               <div>
-                <dt className="t-label opacity-60">Commits</dt>
-                <dd className="t-small text-sm font-semibold tabular-nums mt-0.5">
+                <dt className="t-label" style={{ color: fg, opacity: 0.65 }}>Commits</dt>
+                <dd className="t-small font-semibold tabular-nums mt-0.5" style={{ color: fg }}>
                   {p.commits.toLocaleString()}
+                </dd>
+              </div>
+            ) : null}
+            {p.loc ? (
+              <div>
+                <dt className="t-label" style={{ color: fg, opacity: 0.65 }}>Lines</dt>
+                <dd className="t-small font-semibold tabular-nums mt-0.5" style={{ color: fg }}>
+                  {p.loc.toLocaleString()}
                 </dd>
               </div>
             ) : null}
           </dl>
 
+          {/* A gated or dead live link is stated outright — a button that
+              goes nowhere reads as rot, a labelled one reads as a fact. */}
+          {p.status ? (
+            <p className="t-small font-medium font-sans" style={{ color: fg, opacity: 0.7 }}>
+              {p.status}
+            </p>
+          ) : null}
+
           <div className="flex flex-wrap gap-2">
             {p.tech.map((t) => (
               <span
                 key={t}
-                className="t-label rounded-full bg-current/10 px-3 py-1 text-xs font-semibold backdrop-blur-sm font-sans"
+                className="t-label rounded-full bg-current/15 px-3 py-1 font-semibold backdrop-blur-sm font-sans"
+                style={{ color: fg }}
               >
                 {t}
               </span>
@@ -881,29 +993,105 @@ function ProjectView({
           </div>
         </div>
 
-        {/* 3 — Screenshots */}
+        {/* 3 — The part worth reading.
+
+            Each beat is one scraped fact about what is actually hard in
+            the project. Numbered so the eye can rest between them, and
+            skipped entirely when there is nothing verified to say. */}
+        {p.detail?.length ? (
+          <div
+            className="flex h-full w-[min(90vw,46rem)] shrink-0 flex-col justify-center gap-5 px-[4vw]"
+            style={rise(isOpen, 0.74)}
+          >
+            <h3 className="t-label" style={{ color: fg, opacity: 0.65 }}>
+              What&rsquo;s under it
+            </h3>
+            <ul className="flex flex-col gap-4">
+              {p.detail.map((d, i) => (
+                <li key={i} className="flex gap-3">
+                  <span
+                    className="t-small shrink-0 pt-1 text-xs font-semibold tabular-nums font-sans"
+                    style={{ color: fg, opacity: 0.45 }}
+                  >
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <p
+                    className="t-body font-medium leading-relaxed font-sans"
+                    style={{ color: fg, opacity: 0.92 }}
+                  >
+                    {d}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {/* 4 — Screenshots.
+
+            The shots are 1440x900, so the frame carries that aspect
+            directly and the image fills it edge to edge. The old box was
+            36rem wide against 62vh tall — a landscape picture in an
+            upright hole, which `object-contain` then letterboxed down to
+            a stamp with bars on both sides. Sized from height so it
+            scales with the viewport, capped at 92vw so a wide screen
+            cannot push it past the fold. */}
         <div className="flex h-full shrink-0 items-center gap-[4vw] px-[4vw]" style={rise(isOpen, 0.78)}>
           {p.shot ? (
-            <div className="relative h-[62vh] w-[min(80vw,36rem)] shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md">
+            <button
+              type="button"
+              ref={shotRef}
+              onClick={() => launch()}
+              disabled={!p.live || launching}
+              tabIndex={active ? 0 : -1}
+              aria-label={p.live ? `Open the live ${p.name} site` : `${p.name} interface`}
+              className="group relative shrink-0 overflow-hidden rounded-2xl border border-current/15 bg-current/5 shadow-2xl backdrop-blur-md transition-transform duration-500 enabled:hover:scale-[1.02] enabled:cursor-pointer disabled:cursor-default"
+              style={{
+                transformOrigin: "center",
+                /* Fit the 16:10 shot inside both axes. Setting a width
+                   cap alongside `aspect-ratio` let the cap win and
+                   squeezed the frame narrower than its own ratio, which
+                   `object-cover` then paid for by cropping the sides —
+                   so width is derived from height and clamped, and the
+                   height follows from that same width. */
+                width: "min(92vw, calc(78vh * 1.6))",
+                height: "calc(min(92vw, calc(78vh * 1.6)) / 1.6)",
+              }}
+            >
               <Image
                 src={p.shot}
                 alt={`${p.name} interface`}
                 fill
-                sizes="80vw"
-                className="object-contain p-2"
+                sizes="92vw"
+                className="object-cover object-top"
                 priority={active}
               />
-            </div>
+              {/* Only promise the jump when there is somewhere to jump to. */}
+              {p.live ? (
+                <span
+                  className="t-label pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full px-4 py-2 font-semibold opacity-0 shadow-lg backdrop-blur-md transition-opacity duration-300 group-hover:opacity-100"
+                  style={{ background: fg, color: TONE[p.slug] ?? "#000" }}
+                >
+                  Open the live site
+                </span>
+              ) : null}
+            </button>
           ) : (
-            <div className="grid h-[62vh] w-[min(80vw,36rem)] shrink-0 place-items-center rounded-2xl border border-dashed border-current/25 bg-current/5 font-sans">
-              <span className="t-label font-medium opacity-70">
+            <div
+              className="grid shrink-0 place-items-center rounded-2xl border border-dashed border-current/25 bg-current/5 font-sans"
+              style={{
+                width: "min(92vw, calc(78vh * 1.6))",
+                height: "calc(min(92vw, calc(78vh * 1.6)) / 1.6)",
+              }}
+            >
+              <span className="t-label font-medium" style={{ color: fg, opacity: 0.7 }}>
                 Interactive preview coming soon
               </span>
             </div>
           )}
         </div>
 
-        {/* 4 — Trailing void.
+        {/* 5 — Trailing void.
 
             The mirror of the leading one: a full screen of empty colour
             that marks the end of the case study. Running out of content
@@ -912,6 +1100,7 @@ function ProjectView({
         <div className="grid h-full w-screen shrink-0 place-items-center" aria-hidden>
           <Chevron dir={1} fg={fg} elRef={(el) => (chevronRefs.current[1] = el)} />
         </div>
+      </div>
       </div>
 
       {/* ---------- Header & Chrome ---------- */}
@@ -1044,6 +1233,22 @@ function cssMs(name: string): number {
 
 function closeMs(): number {
   return cssMs("--dur-panel-close");
+}
+
+/** A small chevron cursor, in the site's own arrow shape, pointing the
+ * direction a click in that edge zone will scroll. `fg` keeps it
+ * visible against whichever tone the open panel is wearing. */
+const arrowCursorCache = new Map<string, string>();
+function arrowCursor(dir: -1 | 1, fg: string): string {
+  const key = `${dir}:${fg}`;
+  const cached = arrowCursorCache.get(key);
+  if (cached) return cached;
+  const color = fg.replace("#", "%23");
+  const path = dir === 1 ? "M9 5l7 7-7 7" : "M15 5l-7 7 7 7";
+  const svg = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='${color}' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='${path}'/%3E%3C/svg%3E`;
+  const value = `url("${svg}") 12 12, ${dir === 1 ? "e-resize" : "w-resize"}`;
+  arrowCursorCache.set(key, value);
+  return value;
 }
 
 /** The clip that matches a tile's rect, or null when there is none. */

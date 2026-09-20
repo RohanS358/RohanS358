@@ -1,4 +1,8 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
 
 /* ============================================================
    Minimal. White ground, small type, one motion curve.
@@ -40,6 +44,36 @@
   color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 * {
@@ -59,6 +93,27 @@ html {
   background: var(--color-paper);
   color: var(--color-ink);
   -webkit-font-smoothing: antialiased;
+
+  /* The root size IS the layout scale.
+
+     The mosaic is authored in rem against a 2224x1390 design canvas, so
+     tying the root size to the viewport makes the whole composition
+     fluid while every proportion between blocks stays fixed. `min` of
+     the two axes means the canvas fits whichever dimension is tighter
+     rather than overflowing the short one.
+
+     Nothing else on the page should depend on this: type sizes are set
+     in their own units precisely so a layout change cannot resize the
+     prose. */
+  font-size: min(calc(var(--100vh, 100vh) / 1390 * 10), calc(100vw / 2224 * 10));
+}
+
+@media (max-width: 768px) {
+  html {
+    /* A phone gets a straight viewport-width scale — the height-based
+       term above collapses the canvas on a tall narrow screen. */
+    font-size: 2.4154589372vw;
+  }
 }
 
 body {
@@ -83,16 +138,23 @@ body {
   font-weight: 600;
 }
 
+/* Reading sizes scale with the viewport.
+
+   These were fixed rem — 15/13/12px — which is fine on a laptop and
+   unreadably small on a large display, where the case-study panels are
+   a third of a very tall screen. The vw term lets them grow with the
+   screen; the min keeps them from shrinking below the old value on a
+   phone, and the max stops them ballooning on a wall-sized monitor. */
 .t-body {
   font-family: inherit;
-  font-size: 0.9375rem;
-  line-height: 1.55;
+  font-size: clamp(1.125rem, 1.45vw, 1.75rem);
+  line-height: 1.6;
 }
 
 .t-small {
   font-family: inherit;
   font-weight: 600;
-  font-size: 0.8125rem;
+  font-size: clamp(1rem, 1.2vw, 1.5rem);
   line-height: 1.5;
   color: var(--color-ink-2);
 }
@@ -100,7 +162,7 @@ body {
 .t-label {
   font-family: inherit;
   font-weight: 600;
-  font-size: 0.75rem;
+  font-size: clamp(0.875rem, 1vw, 1.25rem);
   line-height: 1.4;
   color: var(--color-ink-3);
 }
@@ -222,9 +284,316 @@ body {
 .dark {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
 }
 
 /* The html/body rules live at the top of this file, set against the
    site's own --color-paper / --color-ink. The shadcn @layer base block
    that used to sit here applied bg-background/text-foreground from
    tokens this site does not define, which overrode them. */
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+/* ==========================================================
+   HOME — the mosaic.
+
+   Layouts live here, not in JavaScript. The page class only swaps
+   `.home--0` … `.home--5` on the container; these rules do the
+   rest, and the transition on the blocks turns each swap into a
+   rearrangement for free.
+
+   The rules are DIFFERENTIAL. Base geometry below places all
+   eleven blocks; a layout then overrides only what it changes —
+   often nothing but a corner radius. That is what makes the
+   cycle read as one composition restating itself rather than six
+   unrelated grids taking turns, and it is why `.home--1` is four
+   lines instead of eleven.
+
+   Sizes are rem against a root font-size that scales with the
+   viewport (see html), so the whole canvas is fluid while the
+   proportions between blocks stay fixed.
+   ========================================================== */
+
+.home {
+  height: var(--100vh);
+  left: 0;
+  opacity: 0;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  width: 100%;
+  z-index: 2;
+}
+
+.home__content {
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.home__media {
+  display: block;
+  height: 83.8rem;
+  overflow: visible;
+  position: relative;
+  width: 133.7rem;
+}
+
+.home__media__element {
+  overflow: hidden;
+  position: absolute;
+}
+
+/* The transition IS the animation between layouts. Suppressed while
+   GSAP is placing blocks during an entrance or exit, or the two fight
+   over the same properties. */
+.home:not(.home--animating) .home__media__element {
+  transition: all 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+/* Colour is painted by an overlay rather than on the block itself, so
+   the block can hold an image underneath and still tint above it.
+
+   The property is namespaced: a bare `--background` collides with the
+   theme token of that name on :root, which resolves to white and paints
+   over every block. */
+.home__media__element:before {
+  background: var(--tone, transparent);
+  content: "";
+  height: 100%;
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+.home__media__media {
+  display: block;
+  height: 100vh;
+  object-fit: cover;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.4s ease;
+}
+
+.home__media__element:hover .home__media__media {
+  opacity: 1;
+}
+
+.home__link {
+  font-size: 2.4rem;
+  letter-spacing: 0.1rem;
+  margin-top: 1rem;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  text-transform: uppercase;
+}
+
+@media (min-width: 769px) {
+  /* ---------- Base geometry ---------- */
+  .home__media__element--0 { height: 41.9rem; left: 0rem; top: 0rem; width: 24.8rem; z-index: 2; }
+  .home__media__element--1 { height: 41.9rem; left: 24.8rem; top: 0rem; width: 41.9rem; z-index: 2; }
+  .home__media__element--2 { height: 41.9rem; left: 66.7rem; top: 0rem; width: 67rem; z-index: 1; }
+  .home__media__element--3 { height: 41.9rem; left: 0rem; top: 41.9rem; width: 24.8rem; z-index: 2; }
+  .home__media__element--4 { height: 20.9rem; left: 41.9rem; top: 41.9rem; width: 24.8rem; z-index: 2; }
+  .home__media__element--5 { height: 21rem; left: 91.5rem; top: 62.8rem; width: 42.2rem; z-index: 2; }
+  .home__media__element--6 { height: 20.9rem; left: 112.7rem; top: 41.9rem; width: 21rem; z-index: 3; }
+  .home__media__element--7 { height: 41.9rem; left: 66.7rem; top: 41.9rem; width: 24.8rem; z-index: 2; }
+  .home__media__element--8 { height: 21rem; left: 41.9rem; top: 62.8rem; width: 24.8rem; z-index: 2; }
+  .home__media__element--9 { height: 20.9rem; left: 91.5rem; top: 41.9rem; width: 21.2rem; z-index: 2; }
+  .home__media__element--10 { height: 41.9rem; left: 24.8rem; top: 41.9rem; width: 17.1rem; z-index: 2; }
+
+  /* 0 — the plane. Base geometry, hard corners: the composition
+     at rest, before it starts loosening. */
+
+  /* 1 — the same plane, rounded. Nothing moves; only the corners
+     change, so the eye tracks every block through the shift. */
+  .home--1 .home__media__element { border-radius: 10rem; }
+
+  /* 2 — circles. Blocks that are not square get nudged so the
+     round forms sit in balance rather than where the grid left them. */
+  .home--2 .home__media__element { border-radius: 50%; }
+  .home--2 .home__media__element--0 { height: 24.8rem; transform: translateY(14rem); }
+  .home--2 .home__media__element--1 { transform: translateY(4rem); }
+  .home--2 .home__media__element--2 { transform: translateX(-16.8rem); width: 83.8rem; }
+  .home--2 .home__media__element--3 { transform: translateY(-4rem); }
+  .home--2 .home__media__element--4 { transform: translateY(3rem); }
+  .home--2 .home__media__element--7 { height: 24.8rem; transform: translateY(8rem); }
+  .home--2 .home__media__element--10 { height: 17.1rem; transform: translateY(12rem); }
+
+  /* 3 — arches. One corner rounded per block, each facing out of
+     the composition, so the field blooms from its centre. */
+  .home--3 .home__media__element--0 { border-radius: 0 0 0 100rem; }
+  .home--3 .home__media__element--1 { border-radius: 100rem; }
+  .home--3 .home__media__element--2 { border-radius: 0 32rem 0 0; }
+  .home--3 .home__media__element--3 { border-radius: 32rem 0 0 0; }
+  .home--3 .home__media__element--4 { border-radius: 0 0 0 23rem; }
+  .home--3 .home__media__element--5 { border-radius: 0 0 26rem 0; }
+  .home--3 .home__media__element--6 { border-radius: 17rem 0 0 0; }
+  .home--3 .home__media__element--7 { border-radius: 0 0 24rem 0; }
+  .home--3 .home__media__element--8 { border-radius: 0 21rem 0 0; }
+  .home--3 .home__media__element--9 { border-radius: 0 0 0 20rem; }
+  .home--3 .home__media__element--10 { border-radius: 17rem 0 0 0; }
+
+  /* 4 — columns. The one layout that restates geometry outright:
+     the plane becomes a run of narrow staggered uprights. */
+  .home--4 .home__media__element--0 { height: 41.9rem; left: 0rem; top: 0rem; width: 12.4rem; }
+  .home--4 .home__media__element--1 { height: 62.4rem; left: 12.4rem; top: 0rem; width: 21rem; }
+  .home--4 .home__media__element--2 { height: 83.8rem; left: 66.8rem; top: 0rem; width: 33.5rem; }
+  .home--4 .home__media__element--3 { height: 63.4rem; left: 33.4rem; top: 20.4rem; width: 21rem; }
+  .home--4 .home__media__element--4 { height: 41.9rem; left: 54.4rem; top: 20.4rem; width: 12.4rem; }
+  .home--4 .home__media__element--5 { height: 69.4rem; left: 100.3rem; top: 6.4rem; width: 21.3rem; }
+  .home--4 .home__media__element--6 { height: 49.4rem; left: 121.6rem; top: 34.4rem; width: 12.4rem; }
+  .home--4 .home__media__element--7 { height: 41.9rem; left: 0rem; top: 41.9rem; width: 12.4rem; }
+  .home--4 .home__media__element--8 { height: 21.5rem; left: 54.4rem; top: 62.3rem; width: 12.4rem; }
+  .home--4 .home__media__element--9 { height: 20.4rem; left: 33.4rem; top: 0rem; width: 21rem; }
+  .home--4 .home__media__element--10 { height: 6.4rem; left: 100.3rem; top: 0rem; width: 33.4rem; }
+
+  /* 5 — the columns again, as capsules. Same arrangement as 4 with
+     only the radius changed, so the cycle closes on a restatement
+     rather than a seventh new idea. */
+  .home--5 .home__media__element { border-radius: 50rem; }
+  .home--5 .home__media__element--0 { height: 41.9rem; left: 0rem; top: 0rem; width: 12.4rem; }
+  .home--5 .home__media__element--1 { height: 62.4rem; left: 12.4rem; top: 0rem; width: 21rem; }
+  .home--5 .home__media__element--2 { height: 83.8rem; left: 66.8rem; top: 0rem; width: 33.5rem; }
+  .home--5 .home__media__element--3 { height: 63.4rem; left: 33.4rem; top: 20.4rem; width: 21rem; }
+  .home--5 .home__media__element--4 { height: 41.9rem; left: 54.4rem; top: 20.4rem; width: 12.4rem; }
+  .home--5 .home__media__element--5 { height: 69.4rem; left: 100.3rem; top: 6.4rem; width: 21.3rem; }
+  .home--5 .home__media__element--6 { height: 49.4rem; left: 121.6rem; top: 34.4rem; width: 12.4rem; }
+  .home--5 .home__media__element--7 { height: 41.9rem; left: 0rem; top: 41.9rem; width: 12.4rem; }
+  .home--5 .home__media__element--8 { height: 21.5rem; left: 54.4rem; top: 62.3rem; width: 12.4rem; }
+  .home--5 .home__media__element--9 { height: 20.4rem; left: 33.4rem; top: 0rem; width: 21rem; }
+  .home--5 .home__media__element--10 { height: 6.4rem; left: 100.3rem; top: 0rem; width: 33.4rem; }
+}
+@media (max-width: 768px) {
+  /* A phone is tall, so the mosaic is redrawn rather than scaled: the
+     desktop canvas squeezed to 28rem would turn every block into a
+     sliver. Bands down the page, each one full-width or split. */
+  .home__media { height: 59rem; width: 28rem; }
+  .home__media__element--0 { height: 11rem; left: 0rem; top: 0rem; width: 28rem; z-index: 1; }
+  .home__media__element--1 { height: 9rem; left: 0rem; top: 11rem; width: 14rem; z-index: 2; }
+  .home__media__element--2 { height: 9rem; left: 14rem; top: 11rem; width: 14rem; z-index: 2; }
+  .home__media__element--3 { height: 13rem; left: 0rem; top: 20rem; width: 28rem; z-index: 1; }
+  .home__media__element--4 { height: 9rem; left: 0rem; top: 33rem; width: 9.5rem; z-index: 2; }
+  .home__media__element--5 { height: 9rem; left: 9.5rem; top: 33rem; width: 9rem; z-index: 2; }
+  .home__media__element--6 { height: 9rem; left: 18.5rem; top: 33rem; width: 9.5rem; z-index: 2; }
+  .home__media__element--7 { height: 10rem; left: 0rem; top: 42rem; width: 14rem; z-index: 2; }
+  .home__media__element--8 { height: 10rem; left: 14rem; top: 42rem; width: 14rem; z-index: 2; }
+  .home__media__element--9 { height: 7rem; left: 0rem; top: 52rem; width: 18rem; z-index: 2; }
+  .home__media__element--10 { height: 7rem; left: 18rem; top: 52rem; width: 10rem; z-index: 2; }
+
+  /* Silhouette phases carry over; the arrangement does not change on a
+     phone, because a stack has nowhere to rearrange to. */
+  .home--1 .home__media__element { border-radius: 4rem; }
+  .home--2 .home__media__element { border-radius: 50%; }
+  .home--3 .home__media__element--0 { border-radius: 0 0 6rem 0; }
+  .home--3 .home__media__element--1 { border-radius: 4rem 0 0 0; }
+  .home--3 .home__media__element--2 { border-radius: 0 4rem 0 0; }
+  .home--3 .home__media__element--3 { border-radius: 0 0 0 6rem; }
+  .home--3 .home__media__element--4 { border-radius: 4rem 0 0 0; }
+  .home--3 .home__media__element--5 { border-radius: 50%; }
+  .home--3 .home__media__element--6 { border-radius: 0 4rem 0 0; }
+  .home--3 .home__media__element--7 { border-radius: 0 0 0 4rem; }
+  .home--3 .home__media__element--8 { border-radius: 0 0 4rem 0; }
+  .home--3 .home__media__element--9 { border-radius: 0 0 0 3rem; }
+  .home--3 .home__media__element--10 { border-radius: 0 0 3rem 0; }
+  .home--5 .home__media__element { border-radius: 3rem; }
+}
+
+/* One tone per project. Keyed off the data attribute rather than an
+   inline style so the entrance timeline's `clearProps` cannot erase it. */
+.home__media__element[data-tone="simblip"]:before { background: #55E6C1; }
+.home__media__element[data-tone="saul"]:before { background: #292522; }
+.home__media__element[data-tone="looni"]:before { background: #EF476F; }
+.home__media__element[data-tone="rotary"]:before { background: #4E7D32; }
+.home__media__element[data-tone="copaila"]:before { background: #86B83F; }
+.home__media__element[data-tone="bijulibatti"]:before { background: #8067D6; }
+.home__media__element[data-tone="orbital"]:before { background: #FFD166; }
+.home__media__element[data-tone="refill"]:before { background: #39735A; }
+.home__media__element[data-tone="rover"]:before { background: #126782; }
+.home__media__element[data-tone="fraud"]:before { background: #75645D; }
+.home__media__element[data-tone="hackforbusiness"]:before { background: #D1493F; }

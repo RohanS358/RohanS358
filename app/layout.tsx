@@ -2,14 +2,12 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { PROFILE } from "./content";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
 
 /* Rethink Sans — used everywhere across the site. */
 
-const rethink = localFont({
-  src: "./fonts/RethinkSans-VariableFont_wght.ttf",
-  variable: "--font-sans-ui",
-  display: "swap",
-});
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: PROFILE.name,
@@ -25,8 +23,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${rethink.variable} h-full`}
+      className={cn("h-full", "font-sans", geist.variable)}
     >
+       
+ 
       <body className="min-h-full font-sans antialiased">
         <a
           href="#work"
@@ -35,7 +35,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to work
         </a>
         {children}
+        
       </body>
+
     </html>
   );
 }

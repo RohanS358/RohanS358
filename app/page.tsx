@@ -1,20 +1,28 @@
-import Shell from "./Shell";
+import Boot from "./Boot";
+import HomeMarkup from "./HomeMarkup";
 import { PROFILE, PROJECTS, ASIDES } from "./content";
 
 /* ============================================================
-   The page is one screen. Shell owns every view.
+   One screen, owned by the class app.
 
-   The markup below Shell is a static, visually hidden copy of the
-   same content. Not duplication for its own sake: it is what
-   search engines and screen readers read linearly, and what a
-   visitor gets if the JS never runs. The interactive shell is the
-   enhancement, not the source of truth.
+   `.app` and its `data-template` are the contract: App reads the
+   attribute to know which page is showing, and swaps the markup
+   inside on navigation. React renders this once and then leaves
+   the subtree alone — see Boot.
+
+   The sr-only block below is a static, linear copy of the same
+   content. Not duplication for its own sake: it is what search
+   engines and screen readers read, and what a visitor gets if the
+   JS never runs. The animated mosaic is the enhancement.
    ============================================================ */
 
 export default function Home() {
   return (
     <>
-      <Shell />
+      <div className="app" data-template="home">
+        <HomeMarkup />
+      </div>
+      <Boot />
 
       <div className="sr-only">
         <h1>

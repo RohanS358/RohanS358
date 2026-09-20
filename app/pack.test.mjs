@@ -1,66 +1,97 @@
-/* The collage must never show overlapping shapes — not at rest, and not
-   while shapes are animating between layouts. Column bands make that
-   structural: each shape owns its horizontal span for the whole
-   animation, so no two can ever occupy the same space. */
-import { pack, radii, PHASES, COLS, ROWS } from './pack.ts';
+/* Shapes are free — they may overlap, sit at fractional positions and
+   hang off the grid — so there is nothing to assert about how they are
+   ARRANGED. What must hold is that every composition is complete and
+   renderable: the full cast present, no zero-area shapes, and a radius
+   for every shape in every phase. */
+import {
+  MAPS, PHASES, GRID, COMPOSITION_COUNT, composition, pack, radii, shapeRadius,
+} from './pack.ts';
 
 let fail = 0;
 const N = 11;
+const bad = (msg) => { console.log(msg); fail++; };
 
-const hit = (a, b) =>
-  a.c < b.c + b.w && b.c < a.c + a.w && a.r < b.r + b.h && b.r < a.r + a.h;
+for (const [orient, g] of Object.entries(GRID)) {
+  const set = MAPS[orient];
+  if (set.length !== COMPOSITION_COUNT) {
+    bad(`${orient}: ${set.length} compositions, expected ${COMPOSITION_COUNT}`);
+  }
 
-for (let seed = 1; seed <= 300; seed++) {
-  const rects = pack(N, seed);
+  for (const [i, comp] of set.entries()) {
+    const where = `${orient} #${i} (${comp.name})`;
 
-  if (rects.length !== N) { console.log(`seed ${seed}: ${rects.length} rects, want ${N}`); fail++; continue; }
+    if (!comp.name?.trim()) bad(`${where}: no name`);
+    if (!PHASES.includes(comp.phase)) bad(`${where}: unknown phase ${comp.phase}`);
+    if (comp.shapes.length !== N) {
+      bad(`${where}: ${comp.shapes.length} shapes, expected ${N}`);
+    }
 
-  for (const r of rects) {
-    if (r.w <= 0 || r.h <= 0) { console.log(`seed ${seed}: zero-area`, r); fail++; }
-    if (r.c < 0 || r.r < 0 || r.c + r.w > COLS || r.r + r.h > ROWS) {
-      console.log(`seed ${seed}: out of bounds`, r); fail++;
+    for (const [j, s] of comp.shapes.entries()) {
+      for (const k of ['c', 'r', 'w', 'h']) {
+        if (!Number.isFinite(s[k])) bad(`${where} shape ${j}: ${k} is ${s[k]}`);
+      }
+      /* Zero or negative area renders as nothing, which reads on the
+         page as a project silently missing rather than as an error. */
+      if (s.w <= 0 || s.h <= 0) bad(`${where} shape ${j}: ${s.w}x${s.h} has no area`);
+    }
+
+    /* Every shape must get a usable radius in every phase. A phase that
+       falls through returns undefined, which drops border-radius
+       entirely and looks like the morph broke. */
+    for (const ph of PHASES) {
+      for (const [j, s] of comp.shapes.entries()) {
+        const v = shapeRadius(s, ph, g);
+        if (typeof v !== 'string' || !v || v.includes('NaN') || v.includes('undefined')) {
+          bad(`${where} shape ${j} in ${ph}: radius is ${v}`);
+        }
+      }
     }
   }
 
-  // at rest: disjoint...
-  for (let i = 0; i < rects.length; i++)
-    for (let j = i + 1; j < rects.length; j++)
-      if (hit(rects[i], rects[j])) { console.log(`seed ${seed}: overlap at rest`); fail++; }
-
-  // ...and gapless, so the shapes touch as one collage
-  const covered = new Set();
-  for (const r of rects)
-    for (let y = r.r; y < r.r + r.h; y++)
-      for (let x = r.c; x < r.c + r.w; x++) covered.add(`${y},${x}`);
-  if (covered.size !== COLS * ROWS) {
-    console.log(`seed ${seed}: collage has ${COLS * ROWS - covered.size} hole(s)`); fail++;
+  /* The cycle wraps rather than running off the end: a tick counter is
+     the only thing feeding this and it climbs without limit. */
+  for (const step of [-7, -1, 0, COMPOSITION_COUNT, COMPOSITION_COUNT * 9 + 3]) {
+    if (pack(N, step, orient).length !== N) bad(`${orient}: step ${step} did not wrap`);
+    if (!composition(step, orient)?.name) bad(`${orient}: step ${step} has no composition`);
   }
+
+  /* Asking for more shapes than a composition holds pads rather than
+     dropping a project off the page. */
+  if (pack(N + 3, 0, orient).length !== N + 3) bad(`${orient}: pack did not pad`);
 }
 
-/* In flight, shapes may briefly share space. That is deliberate: the
-   relayout crossfades so a crossing is never visible on screen. The
-   invariant we DO guarantee is that every resting layout is a clean
-   packing, which is what the loop above checks. */
-
-/* Corners are square by design: the blocks butt against each other to
-   form one cut-up plane, and any rounding opens a gap of paper at every
-   junction. Asserted so a future "let's soften it" change has to be
-   deliberate rather than accidental. */
-/* The four phases must be visually distinct and every tile must get a
-   value in each one. A phase that silently returns undefined drops
-   border-radius entirely, which looks like "the morph stopped working"
-   rather than an error. */
-for (const ph of PHASES) {
-  for (let i = 0; i < 11; i++) {
-    const v = radii(ph, i);
-    if (typeof v !== 'string' || !v) { console.log(`radii(${ph}, ${i}) gave`, v); fail++; }
-  }
+/* A shape's own radius beats the composition's phase — that override is
+   the whole reason a shape can break from its arrangement. */
+const s = { c: 0, r: 0, w: 2, h: 2, radius: '3px 4px' };
+if (shapeRadius(s, 'round', GRID.landscape) !== '3px 4px') {
+  bad('shape radius did not override the phase');
 }
-if (new Set(PHASES.map((ph) => radii(ph, 0))).size !== PHASES.length) {
-  console.log('phases are not visually distinct'); fail++;
+if (shapeRadius({ c: 0, r: 0, w: 2, h: 2 }, 'square', GRID.landscape) !== '0px') {
+  bad('phase was not used when a shape has no override');
+}
+
+/* The four phases must look different from each other, or the phase
+   setting is doing nothing. Compared on a square shape, where the
+   short-side pinning cannot coincidentally collapse two of them. */
+const sq = { c: 0, r: 0, w: 2, h: 2 };
+if (new Set(PHASES.map((p) => radii(p, sq, GRID.landscape))).size !== PHASES.length) {
+  bad('phases are not visually distinct');
+}
+
+/* The shoulder arch faces out of the composition: top-left block arches
+   top-left, bottom-right arches bottom-right. Easy to invert when
+   editing the halves, and silent when it happens. */
+const g = GRID.landscape;
+if (!/^\S+%/.test(radii('shoulder', { c: 0, r: 0, w: 2, h: 2 }, g))) {
+  bad('shoulder: top-left corner is not the arched one');
+}
+if (!/^0 0 \S+%/.test(radii('shoulder', { c: 10, r: 4, w: 2, h: 2 }, g))) {
+  bad('shoulder: bottom-right corner is not the arched one');
 }
 
 console.log(fail
   ? `${fail} FAILURE(S)`
-  : `PASS — ${N} shapes over 300 layouts: full-grid packing, no overlaps, no holes, in bounds; 4 distinct corner phases`);
+  : `PASS — ${COMPOSITION_COUNT} compositions x ${Object.keys(GRID).length} orientations: `
+    + `${N} shapes each, all finite and non-empty, radius in every phase; `
+    + `overrides win, phases distinct, arch faces out`);
 process.exit(fail ? 1 : 0);
