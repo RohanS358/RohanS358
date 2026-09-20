@@ -597,3 +597,351 @@ body {
 .home__media__element[data-tone="rover"]:before { background: #126782; }
 .home__media__element[data-tone="fraud"]:before { background: #75645D; }
 .home__media__element[data-tone="hackforbusiness"]:before { background: #D1493F; }
+
+/* ==========================================================
+   PROJECT — the case study, read sideways.
+
+   The page is one wide strip of full-viewport panels. The Project
+   class slides it with a per-frame lerp rather than native scroll,
+   because the rail needs a frame hook to drive the sticky header
+   and the in-panel parallax from.
+
+   Running out of strip at either end and pushing further closes
+   the page — that gesture, not the button, is the usual way out.
+   ========================================================== */
+
+.project {
+  height: var(--100vh);
+  left: 0;
+  opacity: 0;
+  overflow: hidden;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  width: 100%;
+  z-index: 1;
+}
+
+.project__wrapper {
+  height: var(--100vh);
+}
+
+/* `white-space: nowrap` on an inline-block strip is what lays the
+   panels side by side without a flex container measuring them. */
+.project__content {
+  display: inline-block;
+  font-size: 0;
+  height: var(--100vh);
+  white-space: nowrap;
+  width: auto;
+}
+
+.project__close {
+  align-items: center;
+  color: #fff;
+  display: flex;
+  font-size: 0;
+  gap: 1rem;
+  justify-content: center;
+  /* Difference blending keeps the control legible over any panel
+     beneath it, light or dark, without a scrim. */
+  mix-blend-mode: difference;
+  opacity: 0;
+  position: absolute;
+  right: 10rem;
+  top: 10rem;
+  transition: opacity 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
+  z-index: 100;
+}
+
+.project--active .project__close { opacity: 0.5; }
+.project--active .project__close:hover { opacity: 1; }
+
+.project__close__icon {
+  display: block;
+  height: 2.8rem;
+  position: relative;
+  width: 2.8rem;
+}
+
+.project__close__icon:before,
+.project__close__icon:after {
+  background: currentColor;
+  content: "";
+  height: 0.3rem;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  width: 100%;
+}
+
+.project__close__icon:before { transform: translate(-50%, -50%) rotate(-45deg); }
+.project__close__icon:after { transform: translate(-50%, -50%) rotate(45deg); }
+
+.project__header {
+  display: inline-block;
+  height: var(--100vh);
+  min-width: 100vw;
+  padding: 0 10rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.project__header__wrapper { height: 100%; }
+
+.project__header__title {
+  align-items: center;
+  display: flex;
+  font-size: 18rem;
+  font-weight: 700;
+  height: 100%;
+  letter-spacing: -0.05em;
+  line-height: 0.9;
+}
+
+.project__sections {
+  display: inline-block;
+  height: var(--100vh);
+  vertical-align: middle;
+}
+
+/* The running header sticks at the left edge while its section
+   passes, rather than scrolling away with it. */
+.project__sections__header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  padding: 10rem;
+  position: absolute;
+  width: 100vw;
+  z-index: 2;
+}
+
+.project__sections__header__title {
+  font-size: 3rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  overflow: hidden;
+}
+
+.project__sections__header__title__text {
+  display: block;
+  transform: translateY(100%);
+  transition: transform 0.6s cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.project--active .project__sections__header__title__text { transform: translateY(0); }
+
+.project__sections__section {
+  display: inline-block;
+  height: var(--100vh);
+  min-width: 100vw;
+  position: relative;
+  vertical-align: middle;
+  white-space: normal;
+}
+
+.project__sections__section__wrapper {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  width: 100%;
+}
+
+.project__sections__content {
+  align-items: center;
+  display: flex;
+  height: var(--100vh);
+  justify-content: center;
+  padding: 10rem;
+}
+
+.project__sections__content__description h1 {
+  font-size: 7rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0 auto 2.5rem;
+  width: 120rem;
+}
+
+.project__sections__content__description p {
+  font-size: 2.6rem;
+  line-height: 1.35;
+  margin: 0 auto;
+  opacity: 0.85;
+  width: 120rem;
+}
+
+.project__sections__content__description p:not(:first-of-type) { margin-top: 2rem; }
+
+.project__sections__content__description a {
+  display: inline-block;
+  position: relative;
+}
+
+.project__sections__content__description a:after {
+  background: currentColor;
+  bottom: 0.2rem;
+  content: "";
+  height: 0.2rem;
+  left: 0;
+  position: absolute;
+  transform: scaleX(1);
+  transform-origin: left;
+  transition: transform 0.4s ease-in-out;
+  width: 100%;
+}
+
+@media (min-width: 769px) {
+  .project__sections__content__description a:hover:after {
+    transform: scaleX(0);
+    transform-origin: right;
+  }
+}
+
+.project__sections__media {
+  align-items: center;
+  display: flex;
+  height: 100%;
+  justify-content: center;
+  padding: 10rem;
+}
+
+.project__sections__media__gallery {
+  align-items: center;
+  display: flex;
+  height: 80rem;
+  justify-content: center;
+  position: relative;
+  width: 128rem;
+}
+
+.project__sections__media__item {
+  height: 100%;
+  position: relative;
+  width: 100%;
+}
+
+.project__sections__media__item__image,
+.project__sections__media__item__video {
+  height: 100%;
+  left: 0;
+  object-fit: contain;
+  object-position: center;
+  position: absolute;
+  top: 0;
+  width: 100%;
+}
+
+/* ---------- In-view reveals ----------
+
+   Set by the Reveal component, faded here: keeping the timing in the
+   stylesheet puts it next to the rest of the motion, and means the
+   observer never writes a style. */
+
+[data-title],
+[data-description],
+[data-media] {
+  opacity: 0;
+  transition-delay: 0.2s;
+  transition-duration: 0.6s;
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.645, 0.045, 0.355, 1);
+}
+
+.project--active [data-title][data-title-active],
+.project--active [data-description][data-description-active],
+.project--active [data-media][data-media-active] {
+  opacity: 1;
+}
+
+@media (max-width: 768px) {
+  /* A phone reads the rail vertically: the strip stacks and the
+     lerp drives translateY instead. */
+  .project__wrapper { height: auto; }
+  .project__content { display: block; height: auto; }
+  .project__sections { display: flex; flex-direction: column; height: auto; }
+  .project__sections__header { display: none; }
+  .project__header { padding: 0 2rem; }
+  .project__header__title { font-size: 5rem; }
+  .project__sections__section { height: auto; min-height: var(--100vh); }
+  .project__sections__content { padding: 2rem; }
+  .project__sections__content__description h1 { font-size: 3.4rem; width: 28rem; }
+  .project__sections__content__description p { font-size: 1.5rem; width: 28rem; }
+  .project__sections__media { padding: 2rem; }
+  .project__sections__media__gallery { height: auto; width: 100%; }
+  .project__sections__media__item { height: auto; }
+  .project__sections__media__item__image { position: static; }
+  .project__close { right: 2rem; top: 2rem; }
+  .project__close__icon { height: 1.8rem; width: 1.8rem; }
+}
+
+/* ---------- Edge navigation ----------
+
+   A tenth of the viewport on each side. The system cursor is hidden
+   inside the zone and the arrow follows the pointer instead, so the
+   control reads as the cursor itself rather than a button sitting on
+   top of the page. Difference blending keeps it legible over any
+   panel colour beneath it. */
+
+.project__button {
+  cursor: none;
+  display: block;
+  height: 100%;
+  mix-blend-mode: difference;
+  opacity: 0.5;
+  position: absolute;
+  top: 0;
+  width: 10vw;
+  z-index: 1;
+}
+
+.project__button--previous { left: 0; }
+.project__button--next { right: 0; }
+
+.project__button__arrow {
+  color: #fff;
+  height: 4.6rem;
+  left: 0;
+  /* Centred on the pointer: the handler writes a raw translate, so the
+     offset that centres the glyph lives here. */
+  margin-left: -2.3rem;
+  margin-top: -2.3rem;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  transition: opacity 0.6s cubic-bezier(0.215, 0.61, 0.355, 1);
+  width: 4.6rem;
+  z-index: 1;
+}
+
+.project__button:hover .project__button__arrow { opacity: 1; }
+
+/* A touch device has no hover, so the zones would only swallow taps. */
+@media (max-width: 768px) {
+  .project__button { display: none; }
+}
+
+/* ---------- Parallax panels ----------
+
+   A panel marked scrollable holds an image taller than its frame; the
+   rail pans it vertically as it passes. The class widens the panel by
+   the image's overhang so the pan has exactly as much rail to run
+   over as the image has height to give. */
+
+.project__sections__section--scrollable .project__sections__media {
+  justify-content: center;
+  margin-right: auto;
+  width: 100vw;
+}
+
+.project__sections__section--scrollable .project__sections__media__gallery {
+  overflow: visible;
+}
+
+.project__sections__section--scrollable .project__sections__media__item__image {
+  height: auto;
+}

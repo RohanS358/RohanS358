@@ -13,10 +13,16 @@ import { Component, type ComponentOptions } from "./Component";
  * router can await one side of a transition and overlap the other.
  */
 
-/** A component class the page instantiates for each matching element. */
+/**
+ * A component to attach to every element matching `selector`.
+ *
+ * A factory rather than a bare class, so a component that needs more
+ * than its element — the reveal markers, say — can be configured here
+ * instead of forcing a subclass per variant.
+ */
 export type Dataset = {
   selector: string;
-  component: new (opts: { element: Element }) => Component;
+  create: (element: Element) => Component;
 };
 
 export type PageOptions = ComponentOptions & {
@@ -43,10 +49,10 @@ export class Page extends Component {
   }
 
   private createDatasets() {
-    for (const { selector, component: Klass } of this.datasets) {
-      const root = this.element ?? document;
+    const root = this.element ?? document;
+    for (const { selector, create } of this.datasets) {
       for (const element of root.querySelectorAll(selector)) {
-        this.components.push(new Klass({ element }));
+        this.components.push(create(element));
       }
     }
   }

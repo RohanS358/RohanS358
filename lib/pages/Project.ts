@@ -42,6 +42,16 @@ export class Project extends Page {
         wrapper: ".project__wrapper",
         content: ".project__content",
         header: ".project__sections__header",
+        /* The title panel doubles as the mobile "highlight", which
+           travels on its own axis as the rail moves. */
+        highlight: ".project__header",
+        highlightWrapper: ".project__header__wrapper",
+        buttonNext: ".project__button--next",
+        buttonNextArrow: ".project__button--next .project__button__arrow",
+        buttonPrevious: ".project__button--previous",
+        buttonPreviousArrow: ".project__button--previous .project__button__arrow",
+        /* Both the title panel and the sections: navigation steps
+           between these, so they are one ordered list. */
         sections: ".project__header, .project__sections__section",
         scrollables: ".project__sections__section--scrollable",
         videos: "video",
@@ -55,6 +65,14 @@ export class Project extends Page {
 
     this.scroll = { current: 0, target: 0, last: 0, lerp: 0.1 };
     this.closing = false;
+
+    /* Hang each arrow off its button so the move handler can reach it
+       from the event target alone. */
+    for (const side of ["Previous", "Next"] as const) {
+      const button = this.one(`button${side}`) as (HTMLElement & { arrow?: Element }) | null;
+      const arrow = this.one(`button${side}Arrow`);
+      if (button && arrow) button.arrow = arrow;
+    }
 
     /* Videos play only while on screen. A dozen looping clips decoding
        off-screen is the difference between a smooth rail and a stuttering
@@ -83,6 +101,11 @@ export class Project extends Page {
       this.resizeObserver = new ResizeObserver(() => this.onResize());
       this.resizeObserver.observe(wrapper);
     }
+
+    /* Measure now rather than waiting for a resize: the wheel handler
+       is already live and reads `width` to decide whether a scroll runs
+       off the end of the strip. */
+    this.onResize();
   }
 
   async show(previous?: Page | null) {
@@ -117,11 +140,17 @@ export class Project extends Page {
   }
 
   private onWheel = (e: WheelEvent) => {
+    /* A strip with no travel cannot be overscrolled out of.
+
+       Without this the page closes on the first wheel event it ever
+       sees: before the first resize `width` is 0, so `limit` is 0 too,
+       and the at-the-end test is trivially true. */
+    const limit = this.limit;
+    if (limit <= 0) return;
+
     const atStart = this.scroll.current <= OVERSCROLL && this.scroll.target <= 0 && e.deltaY < 0;
     const atEnd =
-      this.scroll.current >= this.limit - OVERSCROLL &&
-      this.scroll.target >= this.limit &&
-      e.deltaY > 0;
+      this.scroll.current >= limit - OVERSCROLL && this.scroll.target >= limit && e.deltaY > 0;
 
     if (atStart || atEnd) this.close();
     this.scroll.target += e.deltaY;
@@ -156,16 +185,57 @@ export class Project extends Page {
 
   private onTouchEnd = () => {
     this.touch.down = false;
+    if (this.limit <= 0) return;
     /* A firm flick past either end leaves. The threshold is high enough
        that arriving at the end and stopping does not trigger it. */
     if (this.touch.distance < -500 && this.closableStart) this.close();
     if (this.touch.distance > 500 && this.closableEnd) this.close();
   };
 
+  /**
+   * Step to the neighbouring section.
+   *
+   * Navigation lands ON a panel rather than moving a fixed distance:
+   * the rail is a sequence of full-screen boards, so stopping between
+   * two of them would leave the reader looking at neither. Running off
+   * either end closes the page, which makes the panels and the exit one
+   * continuous gesture.
+   */
+  private step(back: boolean) {
+    const sections = this.list("sections");
+    if (!sections.length) return;
+
+    /* The current panel is whichever one holds the viewport's centre —
+       more robust than nearest-edge when panels differ in width. */
+    const centre = this.scroll.current + this.width * 0.5;
+    const index = sections.findIndex((el) => {
+      const left = (el as HTMLElement).offsetLeft;
+      return centre >= left && centre <= left + el.clientWidth;
+    });
+
+    const next = sections[index + (back ? -1 : 1)] as HTMLElement | undefined;
+    if (!next) return this.close();
+
+    gsap.to(this.scroll, { duration: 1, ease: "expo.out", target: next.offsetLeft });
+  }
+
   private onKeyDown = (e: KeyboardEvent) => {
     if (e.key === "Escape") this.close();
-    else if (e.key === "ArrowLeft") this.scroll.target -= this.width * 0.65;
-    else if (e.key === "ArrowRight") this.scroll.target += this.width * 0.65;
+    else if (e.key === "ArrowLeft") this.step(true);
+    else if (e.key === "ArrowRight") this.step(false);
+  };
+
+  /* The arrow follows the cursor inside its edge zone. `layerX/Y` is
+     relative to the button, which is exactly the offset wanted. */
+  private onButtonMove = (e: MouseEvent) => {
+    const button = e.currentTarget as HTMLElement & { arrow?: HTMLElement };
+    if (!button.arrow) return;
+    button.arrow.style.transform = `translate(${e.offsetX}px, ${e.offsetY}px)`;
+  };
+
+  private onButtonClick = (e: MouseEvent) => {
+    const button = e.currentTarget as HTMLElement;
+    this.step(button.classList.contains("project__button--previous"));
   };
 
   onResize() {
@@ -197,6 +267,15 @@ export class Project extends Page {
         const bounds = el.getBoundingClientRect() as DOMRect & { limit?: number };
         bounds.limit = bounds.width - this.width;
         el.bounds = bounds;
+      }
+    } else {
+      /* Give the title panel enough height for its horizontal text to
+         finish travelling before the next panel arrives. */
+      const highlight = this.one("highlight") as HTMLElement | null;
+      const wrapper = this.one("highlightWrapper") as HTMLElement | null;
+      if (highlight && wrapper) {
+        const w = wrapper.getBoundingClientRect().width;
+        highlight.style.height = `${w + this.height - this.width}px`;
       }
     }
   }
@@ -253,10 +332,33 @@ export class Project extends Page {
       }
     } else {
       content.style.transform = `translate3d(0, -${this.scroll.current}px, 0)`;
+
+      /* The title turns the corner on a phone: the panel slides down
+         while its inner wrapper slides left by the same amount, so a
+         heading laid out horizontally reads as the page scrolls
+         vertically past it. */
+      const highlight = this.one("highlight") as HTMLElement | null;
+      const wrapper = this.one("highlightWrapper") as HTMLElement | null;
+      if (highlight && wrapper) {
+        const travel = gsap.utils.clamp(
+          0,
+          wrapper.getBoundingClientRect().width - this.width,
+          this.scroll.current,
+        );
+        highlight.style.transform = `translateY(${travel}px)`;
+        wrapper.style.transform = `translateX(-${travel}px)`;
+      }
     }
   }
 
   addEventListeners() {
+    for (const side of ["Previous", "Next"] as const) {
+      const button = this.one(`button${side}`);
+      if (!button) continue;
+      this.listen(button, "mousemove", this.onButtonMove as EventListener);
+      this.listen(button, "click", this.onButtonClick as EventListener);
+    }
+
     this.listen(window, "wheel", this.onWheel as EventListener, { passive: true });
     this.listen(window, "keydown", this.onKeyDown as EventListener);
     this.listen(window, "touchstart", this.onTouchStart as EventListener, { passive: true });

@@ -6,6 +6,7 @@ import { Home } from "@/lib/pages/Home";
 import { About } from "@/lib/pages/About";
 import { Project } from "@/lib/pages/Project";
 import { Link } from "@/lib/components/Link";
+import { Reveal, REVEALS } from "@/lib/components/Reveal";
 
 /**
  * Where the class system takes over.
@@ -31,10 +32,16 @@ export default function Boot() {
     const instance = new App();
     app.current = instance;
 
+    /* Shared by every page: the in-view reveals the stylesheet fades. */
+    const datasets = REVEALS.map(({ selector, attribute }) => ({
+      selector,
+      create: (element: Element) => new Reveal({ element, attribute }),
+    }));
+
     instance.mount([
-      { template: "home", page: new Home() },
-      { template: "about", page: new About() },
-      { template: "project", page: new Project() },
+      { template: "home", page: new Home({ datasets }) },
+      { template: "about", page: new About({ datasets }) },
+      { template: "project", page: new Project({ datasets }) },
     ]);
 
     /* Anchors are upgraded after mount so they can route through the
