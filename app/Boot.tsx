@@ -52,7 +52,24 @@ export default function Boot() {
       return link;
     });
 
+    /* Swapped pages add anchors after the initial mount. Delegate internal
+       clicks so those links use the same animated router as the first page. */
+    const onDocumentClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+
+      const anchor = (event.target as Element | null)?.closest("a");
+      if (!anchor || anchor.classList.contains("skip")) return;
+
+      const href = anchor.href;
+      if (!href.startsWith(window.location.origin)) return;
+
+      event.preventDefault();
+      void instance.navigate(href);
+    };
+    document.addEventListener("click", onDocumentClick);
+
     return () => {
+      document.removeEventListener("click", onDocumentClick);
       for (const link of links) link.destroy();
       instance.destroy();
       app.current = null;
