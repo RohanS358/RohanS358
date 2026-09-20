@@ -1,5 +1,6 @@
 import gsap from "gsap";
 import { Page, type PageOptions } from "../core/Page";
+import { HEADER_FADE, TRANSITION_EASE } from "./Project";
 
 /** How many authored layouts exist as `.home--N` rules in the stylesheet. */
 export const LAYOUTS = 6;
@@ -8,7 +9,7 @@ export const LAYOUTS = 6;
 const DWELL = 2;
 
 /** The shared curve. Every move on this page runs on it. */
-const EASE = "expo.inOut";
+const EASE = TRANSITION_EASE;
 
 /**
  * The mosaic.
@@ -61,16 +62,17 @@ export class Home extends Page {
 
     await this.randomize();
 
+    const returnDelay = previous?.element?.classList.contains("project") ? HEADER_FADE : 0;
     const timeline = gsap.timeline({
       onComplete: () => this.element.classList.remove(this.classes.animating),
     });
 
-    timeline.set(this.element, { autoAlpha: 1 });
+    timeline.set(this.element, { autoAlpha: 1 }, returnDelay);
     timeline.fromTo(
       this.one("link"),
       { autoAlpha: 0 },
       { autoAlpha: 1, duration: 1, ease: EASE },
-      0,
+      returnDelay,
     );
 
     const media = this.one("media");
@@ -98,7 +100,7 @@ export class Home extends Page {
             y: -bounds.y - el.offsetTop,
             onComplete: () => gsap.set(el, { clearProps: "all" }),
           },
-          0,
+          returnDelay,
         );
       } else {
         /* Everything else pops in from nothing, each on its own random
@@ -113,7 +115,7 @@ export class Home extends Page {
             scale: 1,
             onComplete: () => gsap.set(el, { clearProps: "all" }),
           },
-          0,
+          returnDelay,
         );
       }
     }

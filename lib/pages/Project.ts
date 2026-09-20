@@ -7,6 +7,13 @@ const MOBILE = 768;
 /** Wheel distance past an end, in px, before the panel takes it as "leave". */
 const OVERSCROLL = 10;
 
+/** The title clears before the shared-element return begins. */
+export const HEADER_FADE = 1;
+/** The project surface fades during the shared-element return. */
+export const BACKGROUND_FADE = 1;
+/** Shared by page entrances, exits, and the return handoff. */
+export const TRANSITION_EASE = "expo.inOut";
+
 /**
  * A case study, read sideways.
  *
@@ -45,6 +52,7 @@ export class Project extends Page {
         /* The title panel doubles as the mobile "highlight", which
            travels on its own axis as the rail moves. */
         highlight: ".project__header",
+        title: ".project__header__title",
         highlightWrapper: ".project__header__wrapper",
         buttonNext: ".project__button--next",
         buttonNextArrow: ".project__button--next .project__button__arrow",
@@ -111,20 +119,32 @@ export class Project extends Page {
   async show(previous?: Page | null) {
     this.closing = false;
     const timeline = gsap.timeline();
-    timeline.call(() => this.element.classList.add(this.classes.active));
     timeline.set(this.element, { autoAlpha: 1 });
+    /* Keep reveal selectors hidden until the shared-element entrance has
+       finished; the project tone is already visible during the handoff. */
+    timeline.call(() => this.element.classList.add(this.classes.active));
     return super.show(previous, timeline);
   }
 
   async hide(next?: Page | null) {
     const timeline = gsap.timeline();
     const fading = [this.one("close"), this.one("content")].filter(Boolean);
-    timeline.to(fading, { autoAlpha: 0, duration: 0.4 }, 0);
-    /* The flat tone background fades separately, and slower: it is
-       what the reader sees for the whole return trip while the tile it
-       is becoming shrinks into place underneath, so cutting it at 0.4s
-       would leave a bare gap before the mosaic settles. */
-    timeline.to(this.element, { autoAlpha: 0, duration: 1 }, 0);
+    timeline.set(this.one("title"), { opacity: 1, visibility: "visible" });
+    timeline.to(
+      this.one("title"),
+      { opacity: 0, duration: HEADER_FADE, ease: TRANSITION_EASE },
+    );
+    timeline.to(
+      fading,
+      { autoAlpha: 0, duration: 0.4, ease: TRANSITION_EASE },
+      HEADER_FADE,
+    );
+    timeline.to(
+      this.element,
+      { opacity: 0, duration: BACKGROUND_FADE, ease: TRANSITION_EASE },
+      HEADER_FADE,
+    );
+    timeline.call(() => this.element.classList.remove(this.classes.active));
     return super.hide(next, timeline);
   }
 
