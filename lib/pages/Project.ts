@@ -118,7 +118,7 @@ export class Project extends Page {
 
   async hide(next?: Page | null) {
     const timeline = gsap.timeline();
-    const fading = [this.one("close"), this.one("content")].filter(Boolean);
+    const fading = [this.element, this.one("close"), this.one("content")].filter(Boolean);
     timeline.to(fading, { autoAlpha: 0, duration: 0.4 });
     return super.hide(next, timeline);
   }
