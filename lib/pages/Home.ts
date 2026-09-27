@@ -1,6 +1,6 @@
 import gsap from "gsap";
 import { Page, type PageOptions } from "../core/Page";
-import { HEADER_FADE, TRANSITION_EASE } from "./Project";
+import { TRANSITION_EASE } from "./Project";
 
 /** How many authored layouts exist as `.home--N` rules in the stylesheet. */
 export const LAYOUTS = 6;
@@ -10,6 +10,13 @@ const DWELL = 2;
 
 /** The shared curve. Every move on this page runs on it. */
 const EASE = TRANSITION_EASE;
+
+/** Set on <html> while a tile is growing into, or shrinking out of, a
+    project — a hook for anything that wants to react to the handoff. */
+const EXPANDING = "is-expanding";
+
+/** The slot's corner radius, which the growing tile lands on. */
+const PANEL_RADIUS = 18;
 
 /**
  * The mosaic.
@@ -23,6 +30,11 @@ const EASE = TRANSITION_EASE;
  * without a single per-frame calculation. It also means a layout can do
  * anything CSS can — overlap, bleed off the edge, any corner radius —
  * without the JS knowing what a layout is.
+ *
+ * It lives in the bento's Products slot. Geometry is authored in `em`,
+ * and `onResize` sets the font-size that fits the whole canvas into the
+ * slot, so the mosaic scales to the panel rather than the viewport.
+ * It only plays while Products is the open tab (`bento:tab`).
  */
 export class Home extends Page {
   /** Which layout is showing. */
@@ -31,6 +43,11 @@ export class Home extends Page {
   private rotation: gsap.core.Tween | null = null;
   /** The block that was clicked, animated into the project page. */
   private openingId: string | null = null;
+  /** Whether the mosaic is currently on screen. */
+  private shown = false;
+  /** The last tab the bento announced. The event fires before React
+      commits the new `data-tab`, so the DOM can't be trusted then. */
+  private tab: string | null = null;
 
   constructor(options: PageOptions = {}) {
     super({
@@ -40,9 +57,14 @@ export class Home extends Page {
       elements: {
         media: ".home__media",
         links: ".home__media__element",
-        link: ".home__link",
       },
     });
+  }
+
+  /** Products is the open tab — or there is no bento around us at all. */
+  private get active() {
+    const tab = this.tab ?? document.querySelector(".bento")?.getAttribute("data-tab");
+    return tab == null || tab === "products";
   }
 
   async show(previous?: Page | null) {
@@ -54,53 +76,63 @@ export class Home extends Page {
     const incomingId = this.openingId;
     this.openingId = null;
 
+    /* Mounted behind another tab: stay hidden until Products opens. */
+    if (!incomingId && !this.active) {
+      this.stopRotation();
+      return;
+    }
+
+    this.shown = true;
+    const blocks = this.list("links");
+    gsap.killTweensOf(blocks);
+
     /* Suppress the per-block CSS transition for the length of the
        entrance: the blocks are being placed by GSAP here, and leaving
        the transition on means every tween fights a CSS animation of the
        same property. */
     this.element.classList.add(this.classes.animating);
+    if (incomingId) document.documentElement.classList.add(EXPANDING);
 
     await this.randomize();
 
-    const returnDelay = previous?.element?.classList.contains("project") ? HEADER_FADE : 0;
     const timeline = gsap.timeline({
-      onComplete: () => this.element.classList.remove(this.classes.animating),
+      onComplete: () => {
+        this.element.classList.remove(this.classes.animating);
+        document.documentElement.classList.remove(EXPANDING);
+      },
     });
 
-    timeline.set(this.element, { autoAlpha: 1 }, returnDelay);
-    timeline.fromTo(
-      this.one("link"),
-      { autoAlpha: 0 },
-      { autoAlpha: 1, duration: 1, ease: EASE },
-      returnDelay,
-    );
+    timeline.set(this.element, { autoAlpha: 1 });
 
     const media = this.one("media");
     const bounds = media?.getBoundingClientRect();
+    /* The tile grows into the panel it sits in, not the whole screen:
+       `.home` fills the Products slot, which is where the project opens. */
+    const panel = this.element.getBoundingClientRect();
 
-    for (const block of this.list("links")) {
+    for (const block of blocks) {
       const el = block as HTMLElement;
 
       if (el.id && el.id === incomingId && bounds) {
-        /* The block we came back from: it is currently full-screen, so
+        /* The block we came back from: it currently fills the panel, so
            it shrinks back into its cell. Reversing the open makes the
            return read as the same motion played backwards rather than a
            new page appearing. */
         timeline.from(
           el,
           {
-            borderRadius: 0,
+            borderRadius: PANEL_RADIUS,
             clearProps: "height,width",
             duration: 1,
             ease: EASE,
-            height: "100vh",
+            height: panel.height,
             pointerEvents: "none",
-            width: "100vw",
-            x: -bounds.x - el.offsetLeft,
-            y: -bounds.y - el.offsetTop,
+            width: panel.width,
+            x: panel.x - bounds.x - el.offsetLeft,
+            y: panel.y - bounds.y - el.offsetTop,
             onComplete: () => gsap.set(el, { clearProps: "all" }),
           },
-          returnDelay,
+          0,
         );
       } else {
         /* Everything else pops in from nothing, each on its own random
@@ -115,7 +147,7 @@ export class Home extends Page {
             scale: 1,
             onComplete: () => gsap.set(el, { clearProps: "all" }),
           },
-          returnDelay,
+          0,
         );
       }
     }
@@ -125,43 +157,42 @@ export class Home extends Page {
 
   async hide(next?: Page | null) {
     this.stopRotation();
+    this.shown = false;
+    const blocks = this.list("links");
+    gsap.killTweensOf(blocks);
 
     /* Let the cancelled rotation and any class change settle before
        measuring: a rect read in the same frame as a layout swap is the
        old layout's. */
     await new Promise((resolve) => requestAnimationFrame(resolve));
 
-    /* Leaving for About is not a shared-element move, so the grid gets
-       one last rearrangement to land on before it goes. */
-    if (next?.element?.classList.contains("about")) {
-      await this.randomize(0);
-      await new Promise((resolve) => gsap.delayedCall(0.6, resolve));
-    }
+    if (this.openingId) document.documentElement.classList.add(EXPANDING);
 
     const timeline = gsap.timeline();
-    timeline.to(this.one("link"), { autoAlpha: 0, duration: 1, ease: EASE });
-
     const media = this.one("media");
     const bounds = media?.getBoundingClientRect();
+    /* The tile grows into the panel it sits in, not the whole screen:
+       `.home` fills the Products slot, which is where the project opens. */
+    const panel = this.element.getBoundingClientRect();
 
-    for (const block of this.list("links")) {
+    for (const block of blocks) {
       const el = block as HTMLElement;
 
       if (el.id && el.id === this.openingId && bounds) {
         /* The clicked block becomes the project page: it grows to fill
-           the viewport from exactly where it sits, so the thing the
+           the panel from exactly where it sits, so the thing the
            reader pressed is the thing that opens. */
         timeline.to(
           el,
           {
-            borderRadius: 0,
+            borderRadius: PANEL_RADIUS,
             duration: 1,
             ease: EASE,
-            height: "100vh",
+            height: panel.height,
             transition: "none",
-            width: "100vw",
-            x: -bounds.x - el.offsetLeft,
-            y: -bounds.y - el.offsetTop,
+            width: panel.width,
+            x: panel.x - bounds.x - el.offsetLeft,
+            y: panel.y - bounds.y - el.offsetTop,
           },
           0,
         );
@@ -216,18 +247,44 @@ export class Home extends Page {
     this.rotation = null;
   }
 
+  /** Fit the em-authored canvas into whatever box the slot gives us. */
+  onResize() {
+    super.onResize();
+    const media = this.one("media") as HTMLElement | null;
+    if (!media || !this.element) return;
+    media.style.fontSize = "1px";
+    const w = media.offsetWidth;
+    const h = media.offsetHeight;
+    const box = this.element.getBoundingClientRect();
+    if (!w || !h || !box.width) return;
+    media.style.fontSize = `${Math.min((box.width * 0.86) / w, (box.height * 0.8) / h)}px`;
+  }
+
   /* Hovering holds the composition still: the cycle exists to be looked
      at, and moving out from under a cursor that is reading a block is
      the one time it should not advance. */
   private onMouseEnter = () => this.stopRotation();
 
   private onMouseLeave = () => {
+    if (!this.shown) return;
     this.stopRotation();
     this.rotation = gsap.delayedCall(DWELL, () => this.randomize());
   };
 
   private onOpen = (e: Event) => {
     this.openingId = (e.currentTarget as HTMLElement).id;
+  };
+
+  /* The bento's tabs: assemble on Products, scatter on leaving it. */
+  private onTab = (e: Event) => {
+    const tab = (e as CustomEvent<string>).detail;
+    this.tab = tab;
+    if (tab === "products" && !this.shown) {
+      this.onResize();
+      void this.show(null);
+    } else if (tab !== "products" && this.shown) {
+      void this.hide(null);
+    }
   };
 
   addEventListeners() {
@@ -239,6 +296,7 @@ export class Home extends Page {
     for (const block of this.list("links")) {
       this.listen(block, "click", this.onOpen);
     }
+    this.listen(window, "bento:tab", this.onTab);
   }
 
   destroy() {

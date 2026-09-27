@@ -44,8 +44,9 @@ export const PROFILE = {
   /** The one line that appears above the work. Everything else waits. */
   shortBio: "I build things that run — physics engines, circuit solvers, AI tools.",
   // TODO(rohan): send these and they light up automatically.
-  linkedin: "",
-  resume: "",
+  linkedin: "https://www.linkedin.com/in/rohansinghcodes/",
+  instagram: "https://www.instagram.com/r0han_slngh/",
+  resume: "/resume.pdf",
 } as const;
 
 export const PROJECTS: Project[] = [

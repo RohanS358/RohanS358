@@ -1,5 +1,8 @@
 import Boot from "./Boot";
+import Bento from "./Bento";
 import HomeMarkup from "./HomeMarkup";
+import { getTracks } from "@/lib/tracks";
+import { getGithubStats } from "@/lib/github";
 import { PROFILE, PROJECTS, ASIDES } from "./content";
 
 /* ============================================================
@@ -16,12 +19,14 @@ import { PROFILE, PROJECTS, ASIDES } from "./content";
    JS never runs. The animated mosaic is the enhancement.
    ============================================================ */
 
-export default function Home() {
+export default async function Home() {
   return (
     <>
-      <div className="app" data-template="home">
-        <HomeMarkup />
-      </div>
+      <Bento tracks={getTracks()} stats={await getGithubStats()}>
+        <div className="app" data-template="home">
+          <HomeMarkup />
+        </div>
+      </Bento>
       <Boot />
 
       <div className="sr-only">

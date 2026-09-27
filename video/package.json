@@ -1,0 +1,20 @@
+{
+  "name": "profile-video",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio",
+    "render": "node render.mjs"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.527",
+    "@remotion/cli": "4.0.527",
+    "@remotion/fonts": "^4.0.527",
+    "@remotion/renderer": "4.0.527",
+    "react": "^19",
+    "react-dom": "^19",
+    "remotion": "4.0.527"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0"
+  }
+}

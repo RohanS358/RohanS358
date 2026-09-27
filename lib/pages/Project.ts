@@ -3,14 +3,18 @@ import { Page, type PageOptions } from "../core/Page";
 
 /** Below this the rail turns vertical; a phone has no room to travel sideways. */
 const MOBILE = 768;
+/* The stylesheet switches to the vertical rail on the WINDOW width, so
+   the JS must ask the same question. Measuring the panel instead (it's
+   narrower than the window inside the bento) runs the phone maths on a
+   desktop layout: zero travel, and the title slides off on its own. */
+let phone: MediaQueryList | undefined;
+const isMobile = () => (phone ??= window.matchMedia(`(max-width: ${MOBILE}px)`)).matches;
 
 /** Wheel distance past an end, in px, before the panel takes it as "leave". */
 const OVERSCROLL = 10;
 
-/** The title clears before the shared-element return begins. */
-export const HEADER_FADE = 1;
-/** The project surface fades during the shared-element return. */
-export const BACKGROUND_FADE = 1;
+/** Shared duration for the project exit UI, matching the mosaic motion. */
+export const EXIT_FADE = 0.6;
 /** Shared by page entrances, exits, and the return handoff. */
 export const TRANSITION_EASE = "expo.inOut";
 
@@ -35,6 +39,10 @@ export class Project extends Page {
 
   private width = 0;
   private height = 0;
+
+  /** Phone: how far the title slides sideways, and the last scrollTop drawn. */
+  private travel = 0;
+  private lastTop = -1;
 
   private observer: IntersectionObserver | null = null;
   private resizeObserver: ResizeObserver | null = null;
@@ -130,27 +138,27 @@ export class Project extends Page {
     const timeline = gsap.timeline();
     const fading = [this.one("close"), this.one("content")].filter(Boolean);
     timeline.set(this.one("title"), { opacity: 1, visibility: "visible" });
-    timeline.to(
-      this.one("title"),
-      { opacity: 0, duration: HEADER_FADE, ease: TRANSITION_EASE },
-    );
-    timeline.to(
-      fading,
-      { autoAlpha: 0, duration: 0.4, ease: TRANSITION_EASE },
-      HEADER_FADE,
-    );
-    timeline.to(
-      this.element,
-      { opacity: 0, duration: BACKGROUND_FADE, ease: TRANSITION_EASE },
-      HEADER_FADE,
-    );
+    timeline.to(this.one("title"), {
+      opacity: 0,
+      duration: EXIT_FADE,
+      ease: TRANSITION_EASE,
+    });
+    timeline.to(fading, {
+      autoAlpha: 0,
+      duration: EXIT_FADE,
+      ease: TRANSITION_EASE,
+    }, 0);
+    /* The page's own tone fades out under the shrinking tile, so the
+       colour drains away with it instead of vanishing in one frame when
+       the stale page is removed at the end. */
+    timeline.to(this.element, { autoAlpha: 0, duration: 0.9, ease: "power2.inOut" }, 0.15);
     timeline.call(() => this.element.classList.remove(this.classes.active));
     return super.hide(next, timeline);
   }
 
   /** How far the strip can travel before it runs out. */
   private get limit() {
-    if (this.width > MOBILE) {
+    if (!isMobile()) {
       const content = this.one("content");
       return Math.max(0, (content?.getBoundingClientRect().width ?? 0) - this.width);
     }
@@ -170,6 +178,8 @@ export class Project extends Page {
        Without this the page closes on the first wheel event it ever
        sees: before the first resize `width` is 0, so `limit` is 0 too,
        and the at-the-end test is trivially true. */
+    /* A phone scrolls natively; nothing to drive. */
+    if (isMobile()) return;
     const limit = this.limit;
     if (limit <= 0) return;
 
@@ -182,6 +192,7 @@ export class Project extends Page {
   };
 
   private onTouchStart = (e: TouchEvent) => {
+    if (isMobile()) return;
     this.touch.down = true;
     const [t] = e.touches;
     this.touch.x.start = t.clientX;
@@ -192,7 +203,7 @@ export class Project extends Page {
   };
 
   private onTouchMove = (e: TouchEvent) => {
-    if (!this.touch.down) return;
+    if (!this.touch.down || isMobile()) return;
     const [t] = e.changedTouches;
     this.touch.x.end = t.clientX;
     this.touch.y.end = t.clientY;
@@ -209,6 +220,7 @@ export class Project extends Page {
   };
 
   private onTouchEnd = () => {
+    if (!this.touch.down) return;
     this.touch.down = false;
     if (this.limit <= 0) return;
     /* A firm flick past either end leaves. The threshold is high enough
@@ -265,10 +277,16 @@ export class Project extends Page {
 
   onResize() {
     super.onResize();
-    this.width = window.innerWidth;
-    this.height = window.innerHeight;
+    /* The page lives inside the bento's main panel, so the panel — not
+       the window — is the "viewport". The CSS reads the same numbers
+       through --pw / --ph. */
+    const el = this.element as HTMLElement | undefined;
+    this.width = el?.clientWidth || window.innerWidth;
+    this.height = el?.clientHeight || window.innerHeight;
+    el?.style.setProperty("--pw", `${this.width}px`);
+    el?.style.setProperty("--ph", `${this.height}px`);
 
-    if (this.width > MOBILE) {
+    if (!isMobile()) {
       /* Each scrollable panel holds a tall image that pans vertically as
          the rail passes it. The panel is widened by the image's overhang
          so the pan has exactly as much rail to happen over. */
@@ -299,14 +317,17 @@ export class Project extends Page {
       const highlight = this.one("highlight") as HTMLElement | null;
       const wrapper = this.one("highlightWrapper") as HTMLElement | null;
       if (highlight && wrapper) {
-        const w = wrapper.getBoundingClientRect().width;
-        highlight.style.height = `${w + this.height - this.width}px`;
+        const w = wrapper.scrollWidth;
+        this.travel = Math.max(0, w - this.width);
+        highlight.style.height = `${this.travel + this.height}px`;
+        this.lastTop = -1;
       }
     }
   }
 
   update() {
     super.update();
+    if (isMobile()) return this.updatePhone();
 
     this.scroll.target = gsap.utils.clamp(0, this.limit, this.scroll.target);
     this.scroll.current = gsap.utils.interpolate(
@@ -321,7 +342,7 @@ export class Project extends Page {
     const content = this.one("content") as HTMLElement | null;
     if (!content) return;
 
-    if (this.width > MOBILE) {
+    if (!isMobile()) {
       content.style.transform = `translate3d(-${this.scroll.current}px, 0, 0)`;
 
       /* The section header sticks: it holds at the left edge while its
@@ -355,31 +376,28 @@ export class Project extends Page {
         (el.firstElementChild as HTMLElement).style.transform = `translateX(${travelled}px)`;
         el.image.style.transform = `translateY(-${panned}px)`;
       }
-    } else {
-      content.style.transform = `translate3d(0, -${this.scroll.current}px, 0)`;
-
-      /* The title turns the corner on a phone: the panel slides down
-         while its inner wrapper slides left by the same amount, so a
-         heading laid out horizontally reads as the page scrolls
-         vertically past it. */
-      const highlight = this.one("highlight") as HTMLElement | null;
-      const wrapper = this.one("highlightWrapper") as HTMLElement | null;
-      if (highlight && wrapper) {
-        const travel = gsap.utils.clamp(
-          0,
-          wrapper.getBoundingClientRect().width - this.width,
-          this.scroll.current,
-        );
-        highlight.style.transform = `translateY(${travel}px)`;
-        wrapper.style.transform = `translateX(-${travel}px)`;
-      }
     }
+  }
+
+  /* A phone scrolls the page natively — the finger IS the scroll, with
+     the OS's own momentum, instead of a lerp trailing behind it. All
+     that's left to drive is the title turning the corner: its wrapper
+     is sticky (CSS), and slides left as the page scrolls down. Nothing
+     here reads layout, and nothing is written when nothing moved. */
+  private updatePhone() {
+    const top = (this.element as HTMLElement | undefined)?.scrollTop ?? 0;
+    if (top === this.lastTop) return;
+    this.lastTop = top;
+    this.scroll.current = this.scroll.target = top;
+    const wrapper = this.one("highlightWrapper") as HTMLElement | null;
+    if (wrapper) wrapper.style.transform = `translate3d(-${Math.min(top, this.travel)}px, 0, 0)`;
   }
 
   addEventListeners() {
     for (const side of ["Previous", "Next"] as const) {
       const button = this.one(`button${side}`);
       if (!button) continue;
+      this.listen(button, "mouseenter", this.onButtonMove as EventListener);
       this.listen(button, "mousemove", this.onButtonMove as EventListener);
       this.listen(button, "click", this.onButtonClick as EventListener);
     }

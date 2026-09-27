@@ -9,7 +9,7 @@ import { PROJECTS } from "./content";
    Each block carries its project's slug as `id`, which is what the open
    animation matches on to know which one to grow. */
 
-const TONE: Record<string, string> = {
+export const TONE: Record<string, string> = {
   simblip: "#55E6C1",
   saul: "#292522",
   looni: "#EF476F",
@@ -62,10 +62,6 @@ export default function HomeMarkup() {
             </a>
           ))}
         </div>
-
-        <a href="/about" className="home__link">
-          About
-        </a>
       </div>
 
     </div>

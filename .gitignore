@@ -39,3 +39,16 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# runtime data: uploads, corkboard, GitHub snapshot — lives on the server
+/data/
+
+# cPanel bundle
+/profile-cpanel.zip
+
+# playwright scratch
+/.playwright-mcp/
+
+# remotion
+/video/node_modules/
+/video/out/

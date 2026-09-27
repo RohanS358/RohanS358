@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
 import Boot from "../../Boot";
+import Bento from "../../Bento";
+import { getTracks } from "@/lib/tracks";
+import { getGithubStats } from "@/lib/github";
 import ProjectMarkup from "../../ProjectMarkup";
 import { PROJECTS } from "../../content";
 
@@ -15,7 +18,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const p = PROJECTS.find((x) => x.slug === slug);
-  return p ? { title: `${p.name} — Rohan Singh`, description: p.line } : {};
+  return p ? { title: p.name, description: p.line } : {};
 }
 
 export default async function ProjectPage({ params }: { params: Promise<{ slug: string }> }) {
@@ -25,9 +28,13 @@ export default async function ProjectPage({ params }: { params: Promise<{ slug: 
 
   return (
     <>
-      <div className="app" data-template="project">
-        <ProjectMarkup p={p} />
-      </div>
+      {/* The shell is here too so closing a cold-loaded project lands
+          on the bento, Products open, not on a blank page. */}
+      <Bento tracks={getTracks()} stats={await getGithubStats()} initialTab="products" intro={false}>
+        <div className="app" data-template="project">
+          <ProjectMarkup p={p} />
+        </div>
+      </Bento>
       <Boot />
     </>
   );

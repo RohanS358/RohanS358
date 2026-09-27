@@ -31,22 +31,37 @@ const TONE: Record<string, string> = {
    luminance the rest of the site uses rather than eyeballed. */
 const LIGHT_ON = new Set(["saul", "rover", "refill", "rotary", "fraud", "bijulibatti"]);
 
+/* "Headline. The rest…" → ["Headline.", "The rest…"]. A beat that's
+   one long sentence splits at its first ": " or ", " instead, so the
+   headline stays glanceable. */
+function splitBeat(d: string): [string, string] {
+  const m = d.match(/^(.{20,110}?[.:;])\s+([\s\S]+)$/) ?? d.match(/^(.{20,90}?),\s+([\s\S]+)$/);
+  return m ? [m[1], m[2]] : [d, ""];
+}
+
 export default function ProjectMarkup({ p }: { p: Project }) {
   return (
     <section
       className="project"
       id={p.slug}
-      style={{
-        background: TONE[p.slug],
-        color: LIGHT_ON.has(p.slug) ? "#fff" : "#0a0a0a",
-      }}
+      /* --tone / --ink let the chrome (close pill, arrow cursor) invert
+         the page's own pair instead of blending against it. */
+      style={
+        {
+          background: TONE[p.slug],
+          color: LIGHT_ON.has(p.slug) ? "#fff" : "#0a0a0a",
+          "--tone": TONE[p.slug],
+          "--ink": LIGHT_ON.has(p.slug) ? "#fff" : "#0a0a0a",
+        } as React.CSSProperties
+      }
     >
       <div className="project__wrapper">
         {/* eslint-disable-next-line @next/next/no-html-link-for-pages --
             the class router intercepts this; next/link would navigate
             before the exit animation had a chance to run. */}
         <a className="project__close" href="/">
-          <span className="project__close__icon" /> Back to Home
+          <span className="project__close__label">back</span>
+          <span className="project__close__icon" aria-hidden />
         </a>
 
         {/* Edge zones, a tenth of the viewport each. Hovering one
@@ -142,19 +157,25 @@ export default function ProjectMarkup({ p }: { p: Project }) {
             ) : null}
 
             {/* One panel per beat — the part worth reading. */}
-            {p.detail?.map((d, i) => (
+            {p.detail?.map((d, i) => {
+              /* First sentence is the headline, the rest is small print
+                 for whoever stops to read. */
+              const [head, rest] = splitBeat(d);
+              return (
               <div className="project__sections__section" key={i}>
                 <div className="project__sections__section__wrapper">
                   <article className="project__sections__content">
                     <div className="project__sections__content__wrapper">
                       <div className="project__sections__content__description">
-                        <h1 data-title>{d}</h1>
+                        <h1 data-title>{head}</h1>
+                        {rest ? <p data-description>{rest}</p> : null}
                       </div>
                     </div>
                   </article>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

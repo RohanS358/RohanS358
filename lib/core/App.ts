@@ -136,8 +136,10 @@ export class App extends Component {
        lives in Home.hide(), and Project.show() must not cut in until
        that has fully finished, or the project page appears over a tile
        still mid-flight. Closing runs the opposite way — the shrink-back
-       lives in Home.show(), so it is Project.hide() (the fading
-       background) that needs to overlap it, not wait behind it. */
+       lives in Home.show(), and Project.hide() only fades the text and
+       chrome sitting on top of the still-full-screen tone. Those two
+       need to run together: awaiting Project.hide() first would leave
+       the shrink waiting behind a fade that has nothing left to reveal. */
     if (template === "project") {
       await previous.hide(this.page);
       await this.page.show(previous);

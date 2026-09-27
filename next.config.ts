@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // cPanel/Passenger: self-contained server in .next/standalone, started by app.js
+  output: "standalone",
 };
 
 export default nextConfig;
